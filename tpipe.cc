@@ -438,6 +438,7 @@ process_pipe(const std::array<std::pair<Point<3>, double>, 3> & openings,
 
   unsigned int os = vertices_3d_global.size();
 
+  // set shortcuts
   const auto bifurcation_point = bifurcation.first;
   const auto opening_0         = openings[0].first;
   const auto opening_1         = openings[1].first;
@@ -453,6 +454,8 @@ process_pipe(const std::array<std::pair<Point<3>, double>, 3> & openings,
     !is_child ? -tangent_parent : (is_left ? tangent_left_child : tangent_right_child);
 
   dst_t /= dst_t.norm();
+
+  // define default values
 
   Tensor<1, 3> normal_rotation_parent;
   Tensor<1, 3> normal_rotation_left_child;
@@ -479,19 +482,16 @@ process_pipe(const std::array<std::pair<Point<3>, double>, 3> & openings,
     auto normal_parent_right =
       get_normal_vector(tangent_parent, tangent_right_child, tangent_left_child);
 
-    // normalize plane normals
-    normal_children = normal_children / normal_children.norm();
-    normal_parent_left = normal_parent_left / normal_parent_left.norm();
-    normal_parent_right = normal_parent_right / normal_parent_right.norm();
-
     // check if planar
     bool is_bifurcation_planar =
       check_if_planar(tangent_parent, tangent_left_child, tangent_right_child);
 
     Tensor<1, 3> normal_intersection_plane;
+
+    // calculate normal of intersection plane
     if(is_bifurcation_planar)
       normal_intersection_plane = normal_children;
-    else
+    else // 3D case
     {
       // calculate normal intersection plane
 
@@ -542,7 +542,6 @@ process_pipe(const std::array<std::pair<Point<3>, double>, 3> & openings,
 
     normal_intersection_plane = normal_intersection_plane / normal_intersection_plane.norm();
 
-
     // calculate rotation normals
     normal_rotation_parent =
       normal_intersection_plane -
@@ -556,9 +555,7 @@ process_pipe(const std::array<std::pair<Point<3>, double>, 3> & openings,
       normal_intersection_plane - normal_intersection_plane * tangent_right_child /
                                     tangent_right_child.norm_square() * tangent_right_child;
 
-
     // calculate degrees between rotation normals and intersection normal
-
     degree_parent_intersection = get_degree(normal_intersection_plane, normal_rotation_parent);
     degree_left_child_intersection =
       get_degree(normal_intersection_plane, normal_rotation_left_child);
@@ -621,7 +618,6 @@ process_pipe(const std::array<std::pair<Point<3>, double>, 3> & openings,
     bool left_child_is_left   = normal_left * tangent_left_child >= 0.0;
     bool right_child_is_right = normal_right * tangent_right_child >= 0.0;
 
-
     // switch parent children degrees if children tangents are mixed up
     if(!left_child_is_left && !right_child_is_right)
     {
@@ -637,81 +633,21 @@ process_pipe(const std::array<std::pair<Point<3>, double>, 3> & openings,
   if(is_child)
   {
     auto dst_n_top = normal_rotation_child;
-
     dst_n_top /= dst_n_top.norm();
 
     transform_top = compute_rotation_matrix(src_n, src_t, dst_n_top, dst_t);
 
     transform_bottom       = transform_top;
-    normal_rotation_parent = normal_rotation_child;
   }
   else
   {
     auto dst_n_bottom = normal_rotation_parent;
-
     dst_n_bottom /= dst_n_bottom.norm();
 
     transform_bottom = compute_rotation_matrix(src_n, src_t, dst_n_bottom, dst_t);
 
-    normal_rotation_child = normal_rotation_parent;
-  }
-
-
-
-
-  // calculate degree between rotation normals and choose rotation
-
-  double degree_rotation_normals = get_degree(normal_rotation_parent, normal_rotation_child);
-
-  bool do_rotate_bottom = false;
-
-  // switch between connection along x- or y-direction
-
-  // case x-direction
-  if(degree_rotation_normals > numbers::PI_4 && degree_rotation_normals < 3.0 * numbers::PI_4)
-  {
-    auto direction_rotation = cross_product_3d(normal_rotation_parent, normal_rotation_child);
-
-    src_n[0] = 1;
-    src_n[1] = 0;
-    src_n[2] = 0;
-
-    Tensor<1, 3> tangent =
-      !is_child ? -tangent_parent : (is_left ? tangent_left_child : tangent_right_child);
-
-    if(direction_rotation * tangent < 0)
-    {
-      normal_rotation_parent          = -normal_rotation_parent;
-      normal_rotation_left_child      = -normal_rotation_left_child;
-      normal_rotation_right_child     = -normal_rotation_right_child;
-      degree_parent_intersection      = -degree_parent_intersection;
-      degree_left_child_intersection  = -degree_left_child_intersection;
-      degree_right_child_intersection = -degree_right_child_intersection;
-      left_right_mixed_up             = !left_right_mixed_up;
-    }
-
-    auto dst_n_bottom = normal_rotation_parent;
-
-    dst_n_bottom /= dst_n_bottom.norm();
-
-    do_rotate_bottom = true;
-
-    transform_bottom = compute_rotation_matrix(src_n, src_t, dst_n_bottom, dst_t);
-  }
-  else if(degree_rotation_normals > 3.0 * numbers::PI_4) // case y-direction
-  {
-    normal_rotation_parent      = -normal_rotation_parent;
-    normal_rotation_left_child  = -normal_rotation_left_child;
-    normal_rotation_right_child = -normal_rotation_right_child;
-    auto dst_n_bottom           = normal_rotation_parent;
-
-    dst_n_bottom /= dst_n_bottom.norm();
-
-    transform_bottom                = compute_rotation_matrix(src_n, src_t, dst_n_bottom, dst_t);
-    degree_parent_intersection      = -degree_parent_intersection;
-    degree_left_child_intersection  = -degree_left_child_intersection;
-    degree_right_child_intersection = -degree_right_child_intersection;
-    left_right_mixed_up             = !left_right_mixed_up;
+    transform_top             = transform_bottom;
+    degree_child_intersection = 0.0;
   }
 
   // define degrees
@@ -719,22 +655,18 @@ process_pipe(const std::array<std::pair<Point<3>, double>, 3> & openings,
   double degree_2                   = degree_parent_right_child;
   double degree_separation_children = degree_left_child_right_child;
 
-  // root does not have a top rotation matrix -> use bottom one
-  if(!is_child)
-  {
-    transform_top             = transform_bottom;
-    degree_child_intersection = 0.0;
-  }
-
   // extract some parameters of this branch
   auto tangent = !is_child ? -tangent_parent : (is_left ? tangent_left_child : tangent_right_child);
   auto source  = !is_child ? opening_0 : bifurcation_point;
 
-  unsigned int n_intersections = 2;
-
   double radius_top = !is_child ? openings[0].second : bifurcation.second;
   double radius_bottom =
     !is_child ? bifurcation.second : (is_left ? openings[1].second : openings[2].second);
+
+  double radius_mean = 0.5 * (radius_top + radius_bottom);
+
+  // TODO adjust number of intersections
+  unsigned int n_intersections = std::ceil(std::max(2.0, tangent.norm() / (2.0 * radius_mean)));
 
   // compute vertices and cells in reference system
   std::vector<CellData<3>> cell_data_3d;
@@ -757,7 +689,7 @@ process_pipe(const std::array<std::pair<Point<3>, double>, 3> & openings,
                   is_left,
                   left_right_mixed_up,
                   left_right_mixed_up_parent,
-                  do_rotate_bottom,
+                  false,
                   n_intersections);
 
   // create triangulation
@@ -957,12 +889,12 @@ tpipe(Triangulation<3, 3> &                              tria,
            unsigned int>
     map;
 
+  unsigned int outlet_id_first = 1;
+  unsigned int outlet_id_last;
+
   {
     Triangulation<3> tria_tmp(Triangulation<3>::MeshSmoothing::none, true);
     tria_tmp.create_triangulation(vertices_3d, cell_data_3d, subcell_data);
-
-    unsigned int outlet_id_first = 1;
-    unsigned int outlet_id_last;
 
     // set boundary ids
     unsigned int counter = outlet_id_first; // counter for outlets
@@ -980,6 +912,8 @@ tpipe(Triangulation<3, 3> &                              tria,
     // set outlet_id_last which is needed by the application setting the boundary conditions
     outlet_id_last = counter;
   }
+
+  (void)outlet_id_last; // TODO: use outlet id
 
   GridReordering<3>::reorder_cells(cell_data_3d, true);
   tria.create_triangulation(vertices_3d, cell_data_3d, subcell_data);
@@ -1035,7 +969,7 @@ main()
   constexpr const unsigned int dim = 3;
 
   const std::array<std::pair<Point<dim>, double>, 3> openings = {
-    {{{-2., 0., 0.}, 1.}, {{0., -2., 0.}, 1.}, {{2., 0., 0.}, 1.}}};
+    {{{-4., 0., 0.}, 1.}, {{0., -4., -0.4}, 0.75}, {{0.1, 0., -4.}, 0.5}}};
 
   const std::pair<Point<dim>, double> bifurcation = {{0., 0., 0.}, 1.};
 
