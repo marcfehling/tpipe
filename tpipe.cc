@@ -473,11 +473,16 @@ process_pipe(const std::array<std::pair<Point<3>, double>, 3> & openings,
   {
     // plane normals
     auto normal_children =
-      get_normal_vector(tangent_left_child, tangent_right_child, tangent_parent);
+      get_normal_vector(tangent_right_child, tangent_left_child, tangent_parent);
     auto normal_parent_left =
       get_normal_vector(tangent_parent, tangent_left_child, tangent_right_child);
     auto normal_parent_right =
       get_normal_vector(tangent_parent, tangent_right_child, tangent_left_child);
+
+    // normalize plane normals
+    normal_children = normal_children / normal_children.norm();
+    normal_parent_left = normal_parent_left / normal_parent_left.norm();
+    normal_parent_right = normal_parent_right / normal_parent_right.norm();
 
     // check if planar
     bool is_bifurcation_planar =
@@ -560,54 +565,54 @@ process_pipe(const std::array<std::pair<Point<3>, double>, 3> & openings,
     degree_right_child_intersection =
       get_degree(normal_intersection_plane, normal_rotation_right_child);
 
-
-    // calculate direction of vector
-
-    auto direction_parent_left_child =
-      cross_product_3d(normal_rotation_parent, normal_rotation_left_child);
-    auto direction_parent_right_child =
-      cross_product_3d(normal_rotation_parent, normal_rotation_right_child);
-    auto direction_left_child_right_child =
-      cross_product_3d(normal_rotation_left_child, normal_rotation_right_child);
-
-    if(direction_parent_left_child * tangent_parent > 0.0 &&
-       direction_parent_left_child * tangent_left_child > 0)
-      direction_parent_left_child =
-        direction_parent_left_child / direction_parent_left_child.norm();
-    else
-      direction_parent_left_child =
-        -direction_parent_left_child / direction_parent_left_child.norm();
-
-    if(direction_parent_right_child * tangent_parent > 0.0 &&
-       direction_parent_right_child * tangent_right_child > 0)
-      direction_parent_right_child =
-        direction_parent_right_child / direction_parent_right_child.norm();
-    else
-      direction_parent_right_child =
-        -direction_parent_right_child / direction_parent_right_child.norm();
-
-    if(direction_left_child_right_child * tangent_right_child > 0.0 &&
-       direction_left_child_right_child * tangent_left_child > 0)
-      direction_left_child_right_child =
-        direction_left_child_right_child / direction_left_child_right_child.norm();
-    else
-      direction_left_child_right_child =
-        -direction_left_child_right_child / direction_left_child_right_child.norm();
-
-    if(!is_bifurcation_planar)
-    {
-      degree_parent_left_child  = get_degree(tangent_parent, direction_parent_left_child);
-      degree_parent_right_child = get_degree(tangent_parent, direction_parent_right_child);
-      degree_left_child_right_child =
-        get_degree(tangent_left_child, direction_left_child_right_child);
-    }
-    else
+    // calculate degrees between cylinders
+    if(is_bifurcation_planar)
     {
       degree_parent_left_child      = get_degree(tangent_parent, tangent_left_child) / 2.0;
       degree_parent_right_child     = get_degree(tangent_parent, tangent_right_child) / 2.0;
       degree_left_child_right_child = get_degree(tangent_left_child, tangent_right_child) / 2.0;
     }
+    else // 3D case
+    {
+      // calculate direction of vectors
 
+      auto direction_parent_left_child =
+        cross_product_3d(normal_rotation_parent, normal_rotation_left_child);
+      auto direction_parent_right_child =
+        cross_product_3d(normal_rotation_parent, normal_rotation_right_child);
+      auto direction_left_child_right_child =
+        cross_product_3d(normal_rotation_left_child, normal_rotation_right_child);
+
+      if(direction_parent_left_child * tangent_parent > 0.0 &&
+         direction_parent_left_child * tangent_left_child > 0)
+        direction_parent_left_child =
+          direction_parent_left_child / direction_parent_left_child.norm();
+      else
+        direction_parent_left_child =
+          -direction_parent_left_child / direction_parent_left_child.norm();
+
+      if(direction_parent_right_child * tangent_parent > 0.0 &&
+         direction_parent_right_child * tangent_right_child > 0)
+        direction_parent_right_child =
+          direction_parent_right_child / direction_parent_right_child.norm();
+      else
+        direction_parent_right_child =
+          -direction_parent_right_child / direction_parent_right_child.norm();
+
+      if(direction_left_child_right_child * tangent_right_child > 0.0 &&
+         direction_left_child_right_child * tangent_left_child > 0)
+        direction_left_child_right_child =
+          direction_left_child_right_child / direction_left_child_right_child.norm();
+      else
+        direction_left_child_right_child =
+          -direction_left_child_right_child / direction_left_child_right_child.norm();
+
+      // calculate degrees depending on direction vectors
+      degree_parent_left_child  = get_degree(tangent_parent, direction_parent_left_child);
+      degree_parent_right_child = get_degree(tangent_parent, direction_parent_right_child);
+      degree_left_child_right_child =
+        get_degree(tangent_left_child, direction_left_child_right_child);
+    }
 
     // check if right_children is right and left_children is left
     auto normal_right = cross_product_3d(normal_rotation_parent, tangent_parent);
@@ -627,22 +632,32 @@ process_pipe(const std::array<std::pair<Point<3>, double>, 3> & openings,
   Tensor<2, 3> transform_top;
   Tensor<2, 3> transform_bottom;
 
+  // compute rotation matrix
+
   if(is_child)
+  {
+    auto dst_n_top = normal_rotation_child;
+
+    dst_n_top /= dst_n_top.norm();
+
+    transform_top = compute_rotation_matrix(src_n, src_t, dst_n_top, dst_t);
+
+    transform_bottom       = transform_top;
+    normal_rotation_parent = normal_rotation_child;
+  }
+  else
   {
     auto dst_n_bottom = normal_rotation_parent;
 
     dst_n_bottom /= dst_n_bottom.norm();
 
     transform_bottom = compute_rotation_matrix(src_n, src_t, dst_n_bottom, dst_t);
-  }
-  else
-  {
-    transform_bottom       = transform_top;
-    normal_rotation_parent = normal_rotation_child;
+
+    normal_rotation_child = normal_rotation_parent;
   }
 
-  if(!is_child)
-    normal_rotation_child = normal_rotation_parent;
+
+
 
   // calculate degree between rotation normals and choose rotation
 
@@ -715,7 +730,7 @@ process_pipe(const std::array<std::pair<Point<3>, double>, 3> & openings,
   auto tangent = !is_child ? -tangent_parent : (is_left ? tangent_left_child : tangent_right_child);
   auto source  = !is_child ? opening_0 : bifurcation_point;
 
-  unsigned int n_intersections = 3;
+  unsigned int n_intersections = 2;
 
   double radius_top = !is_child ? openings[0].second : bifurcation.second;
   double radius_bottom =
