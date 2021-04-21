@@ -42,17 +42,15 @@ BraceWrapping:
   SplitEmptyNamespace: false
 
 BreakBeforeBinaryOperators: None
-BreakBeforeBraces: Allman
+BreakBeforeBraces: Custom
 BreakBeforeInheritanceComma: false
 BreakBeforeTernaryOperators: false
-BreakConstructorInitializers: BeforeColon
+BreakConstructorInitializers: BeforeComma
 BreakStringLiterals: false
 
-ColumnLimit: 100
+ColumnLimit: 80
 
 CompactNamespaces: false
-
-ConstructorInitializerAllOnOneLineOrOnePerLine: true
 
 ConstructorInitializerIndentWidth: 2
 
@@ -64,13 +62,15 @@ DerivePointerAlignment: false
 
 FixNamespaceComments: true
 
-IncludeBlocks: Preserve
+IncludeBlocks: Regroup
 IncludeCategories:
 # config.h must always be first:
   - Regex:    "deal.II/base/config.h"
     Priority: -1
 # deal.II folders in sorted order:
   - Regex:    "deal.II/algorithms/.*\\.h"
+    Priority: 100
+  - Regex:    "deal.II/arborx/.*\\.h"
     Priority: 110
   - Regex:    "deal.II/base/.*\\.h"
     Priority: 120
@@ -112,8 +112,10 @@ IncludeCategories:
     Priority: 290
   - Regex:    "deal.II/physics/.*\\.h"
     Priority: 300
-  - Regex:    "deal.II/sundials/.*\\.h"
+  - Regex:    "deal.II/simplex/.*\\.h"
     Priority: 310
+  - Regex:    "deal.II/sundials/.*\\.h"
+    Priority: 320
 # put boost right after deal:
   - Regex: "<boost.*>"
     Priority: 500
@@ -129,6 +131,10 @@ IncludeCategories:
 # should not be caught here
   - Regex: "<[a-z_]+>"
     Priority: 100000
+# make sure that "../tests.h" appears before all other local include files
+# such that replacing Assert in tests also applies to the testing header files.
+  - Regex: "\\.\\./tests\\.h"
+    Priority: 200000
 
 IndentCaseLabels: true
 IndentPPDirectives: AfterHash
@@ -142,22 +148,22 @@ Language: Cpp
 
 MaxEmptyLinesToKeep: 3
 
-NamespaceIndentation: None
+NamespaceIndentation: All
 
 PenaltyBreakBeforeFirstCallParameter: 90
 
-PointerAlignment: Middle
+PointerAlignment: Right
 
 ReflowComments: true
-CommentPragmas: '( \| |\*--|<li>|@ref | @p | @param  |@returns |@warning |@ingroup |@author |@date |@related |@relates |@relatesalso |@deprecated |@image |@return |@brief |@attention |@copydoc |@addtogroup |@todo |@tparam |@see |@note |@skip |@skipline |@until |@line |@dontinclude |@include)'
+CommentPragmas: '( \| |\*--|<li>|@ref | @p |@param |@name |@returns |@warning |@ingroup |@author |@date |@related |@relates |@relatesalso |@deprecated |@image |@return |@brief |@attention |@copydoc |@addtogroup |@todo |@tparam |@see |@note |@skip |@skipline |@until |@line |@dontinclude |@include)'
 
 SortIncludes: true
 SortUsingDeclarations: true
 
 SpaceAfterCStyleCast: false
-SpaceAfterTemplateKeyword: false
+SpaceAfterTemplateKeyword: true
 SpaceBeforeAssignmentOperators: true
-SpaceBeforeParens: Never
+SpaceBeforeParens: ControlStatements
 SpaceInEmptyParentheses: false
 SpacesBeforeTrailingComments: 1
 SpacesInAngles: false
