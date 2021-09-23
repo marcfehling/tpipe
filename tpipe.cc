@@ -1005,7 +1005,8 @@ tpipe(Triangulation<3, 3> &                             tria,
  * Refines the provided triangulation globally by the specified amount of times.
  *
  * Writes the coarse mesh as well as the mesh after each global refinement
- * to the filesystem in VTK format.
+ * to the filesystem in VTK format. Also prints the volume of the mesh to the
+ * console for debugging purposes.
  */
 template <int dim, int spacedim>
 void
@@ -1018,6 +1019,9 @@ refine_and_write(Triangulation<dim, spacedim> &tria,
   auto output = [&](const unsigned int n) {
     std::ofstream output(filestem + "-" + std::to_string(n) + ".vtk");
     grid_out.write_vtk(tria, output);
+
+    std::cout << "n: " << n << ", volume: " << GridTools::volume(tria)
+              << std::endl;
   };
 
   output(0);
@@ -1030,7 +1034,7 @@ refine_and_write(Triangulation<dim, spacedim> &tria,
 
 
 /**
- * Examplary application for a simple 3D T-pipe.
+ * Exemplary application for a simple 3D T-pipe.
  */
 int
 main()
