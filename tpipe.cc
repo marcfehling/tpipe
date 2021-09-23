@@ -3,7 +3,7 @@
 
 #include <deal.II/grid/grid_generator.h>
 #include <deal.II/grid/grid_out.h>
-#include <deal.II/grid/grid_reordering.h>
+#include <deal.II/grid/grid_tools.h>
 #include <deal.II/grid/tria.h>
 
 #include <array>
@@ -238,7 +238,7 @@ create_reference_cylinder(const bool                do_transition,
       cell_data[5 + a * 2].vertices[3] = a == 3 ? 3 : 7 + a * 4;
     }
   SubCellData subcell_data;
-  GridReordering<2>::reorder_cells(cell_data, true);
+  GridTools::consistently_order_cells(cell_data);
 
   Triangulation<2> tria_2d;
   tria_2d.create_triangulation(vertices, cell_data, subcell_data);
@@ -983,7 +983,7 @@ tpipe(Triangulation<3, 3> &                             tria,
 
   (void)outlet_id_last; // TODO: use outlet id
 
-  GridReordering<3>::reorder_cells(cell_data_3d, true);
+  GridTools::consistently_order_cells(cell_data_3d);
   tria.create_triangulation(vertices_3d, cell_data_3d, subcell_data);
 
 #ifdef DEBUG
