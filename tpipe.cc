@@ -175,14 +175,10 @@ tpipe(Triangulation<3, 3> &                             tria,
       //
       // r in [0,1], phi in [0,2Pi], z in [0,1]
       // number of intersections
-      /*
       const unsigned int n_slices =
-        std::max(2.,
-                 std::ceil(
-                   skeleton_length[p] /
-                   (0.5 * std::min(openings[p].second, bifurcation.second))));
-      */
-      const unsigned int n_slices = 2; // DEBUG
+        1 + std::ceil(skeleton_length[p] /
+                      std::min(openings[p].second, bifurcation.second));
+      // const unsigned int n_slices = 2; // DEBUG
       GridGenerator::extrude_triangulation(tria_base,
                                            n_slices,
                                            /*height*/ 1.,
@@ -229,6 +225,9 @@ tpipe(Triangulation<3, 3> &                             tria,
                                 std::abs(y_new) * cosecant_polar *
                                   ((pt[1] > 0) ? cotangent_azimuth_half_right :
                                                  cotangent_azimuth_half_left);
+        Assert(z_factor > 0,
+               ExcMessage("Invalid input: at least one pipe segment "
+                          "not long enough in this configuration"));
         const double z_new = z_factor * pt[2];
 
         return Point<spacedim>(x_new, y_new, z_new);
@@ -306,14 +305,15 @@ refine_and_write(Triangulation<dim, spacedim> &tria,
                  const unsigned int            n_global_refinements = 0,
                  const std::string             filestem             = "grid")
 {
-  GridOut grid_out;
+  std::cout << "name: " << filestem << std::endl;
 
-  auto output = [&](const unsigned int n) {
+  GridOut    grid_out;
+  const auto output = [&](const unsigned int n) {
     std::ofstream output(filestem + "-" + std::to_string(n) + ".vtk");
     grid_out.write_vtk(tria, output);
 
-    std::cout << "name: " << filestem << ", n: " << n
-              << ", volume: " << GridTools::volume(tria) << std::endl;
+    std::cout << "  n: " << n << ", volume: " << GridTools::volume(tria)
+              << std::endl;
   };
 
   output(0);
@@ -327,14 +327,42 @@ refine_and_write(Triangulation<dim, spacedim> &tria,
 
 
 /**
- * Exemplary application for a simple 3D T-pipe.
+ * Tests a selection of different configurations.
  */
-int
-main()
+void
+test_selection()
 {
   constexpr unsigned int dim = 3;
 
   // ypipe in plane
+  {
+    const std::array<std::pair<Point<dim>, double>, 3> openings = {
+      {{{-2., 0., 0.}, 1.},
+       {{1., std::sqrt(3), 0.}, 1.},
+       {{1., -std::sqrt(3), 0.}, 1.}}};
+
+    const std::pair<Point<dim>, double> bifurcation = {{0., 0., 0.}, 1.};
+
+    Triangulation<dim> tria;
+    tpipe(tria, openings, bifurcation);
+
+    refine_and_write(tria, 2, "ypipe");
+  }
+
+  // tpipe in plane
+  {
+    const std::array<std::pair<Point<dim>, double>, 3> openings = {
+      {{{-2., 0., 0.}, 1.}, {{0., 2., 0.}, 1.}, {{2., 0., 0.}, 1.}}};
+
+    const std::pair<Point<dim>, double> bifurcation = {{0., 0., 0.}, 1.};
+
+    Triangulation<dim> tria;
+    tpipe(tria, openings, bifurcation);
+
+    refine_and_write(tria, 2, "tpipe");
+  }
+
+  // corner piece
   {
     const std::array<std::pair<Point<dim>, double>, 3> openings = {
       {{{2., 0., 0.}, 1.}, {{0., 2., 0.}, 1.}, {{0., 0., 2.}, 1.}}};
@@ -344,34 +372,150 @@ main()
     Triangulation<dim> tria;
     tpipe(tria, openings, bifurcation);
 
-    refine_and_write(tria, 2, "ypipe_plane");
+    refine_and_write(tria, 2, "corner");
   }
 
-  // tpipe in plane
+  // irregular configuration with arbitrary points
   {
     const std::array<std::pair<Point<dim>, double>, 3> openings = {
-      {{{2., 0., 0.}, 1.}, {{-2., 0., 0.}, 1.}, {{0., 2., 0.}, 1.}}};
+      {{{-4., 0., 0.}, 1.5}, {{4., -8., -0.4}, 0.75}, {{0.1, 0., -6.}, 0.5}}};
 
     const std::pair<Point<dim>, double> bifurcation = {{0., 0., 0.}, 1.};
 
     Triangulation<dim> tria;
     tpipe(tria, openings, bifurcation);
 
-    refine_and_write(tria, 2, "tpipe_plane");
+    refine_and_write(tria, 2, "irregular");
   }
+}
 
-  // weird pipe
-  {
-    const std::array<std::pair<Point<dim>, double>, 3> openings = {
-      {{{-4., 0., 0.}, 1.}, {{4., -8., -0.4}, 0.75}, {{0.1, 0., -4.}, 0.5}}};
 
-    const std::pair<Point<dim>, double> bifurcation = {{0., 0., 0.}, 1.};
 
-    Triangulation<dim> tria;
-    tpipe(tria, openings, bifurcation);
+/**
+ * Returns the binomial coefficient (n choose k) via the multiplicative formula.
+ */
+unsigned int
+n_choose_k(const unsigned int n, const unsigned int k)
+{
+  double result = 1.;
+  for (unsigned int i = 1; i <= k; ++i)
+    result *= (1. + n - i) / i;
+  return static_cast<unsigned int>(result);
+}
 
-    refine_and_write(tria, 2, "ypipe");
-  }
+
+
+/**
+ * Returns all possible permutations to choose k integers from the interval
+ * [0,n-1].
+ */
+std::vector<std::vector<unsigned int>>
+permutations(const unsigned int n, const unsigned int k)
+{
+  Assert(n >= k, ExcInternalError());
+
+  if (k == 0)
+    return std::vector<std::vector<unsigned int>>();
+
+  // initialize mask
+  // last k entries must be masked, otherwise std::next_permutation won't work
+  std::vector<bool> mask(n);
+  for (unsigned int i = 0; i < n; ++i)
+    mask[i] = (i >= (n - k));
+
+  const unsigned int                     n_permutations = n_choose_k(n, k);
+  std::vector<std::vector<unsigned int>> permutations;
+  permutations.reserve(n_permutations);
+  do
+    {
+      // translate current mask permutation into indices
+      std::vector<unsigned int> combination;
+      combination.reserve(k);
+      for (unsigned int i = 0; i < n; ++i)
+        if (mask[i])
+          combination.push_back(i);
+      Assert(combination.size() == k, ExcInternalError());
+
+      permutations.push_back(std::move(combination));
+  } while (std::next_permutation(mask.begin(), mask.end()));
+  Assert((permutations.size() == n_permutations), ExcInternalError());
+
+  return permutations;
+}
+
+
+
+/**
+ * Tests lots of permutations.
+ */
+void
+test_permutations()
+{
+  // fixed constants
+  constexpr unsigned int dim    = 3;
+  constexpr unsigned int npipes = 3;
+
+  // find n points in any coordinate direction
+  constexpr int n_per_direction = 1;
+
+  // parameters
+  constexpr double radius  = 0.4;
+  constexpr int    npoints = Utilities::pow(2 * n_per_direction + 1, dim) - 1;
+
+  // set up all points for the test.
+  // bifurcation will be in origin.
+  std::pair<Point<dim>, double> bifurcation(Point<dim>(0, 0, 0), radius);
+
+  // openings are located in a n_per_direction^3 box around the origin.
+  std::vector<std::pair<Point<dim>, double>> points;
+  points.reserve(npoints);
+  for (int i = -n_per_direction; i <= n_per_direction; ++i)
+    for (int j = -n_per_direction; j <= n_per_direction; ++j)
+      for (int k = -n_per_direction; k <= n_per_direction; ++k)
+        if (i != 0 || j != 0 || k != 0)
+          points.emplace_back(Point<dim>(i, j, k), radius);
+  Assert(points.size() == npoints, ExcInternalError());
+
+  const auto perms = permutations(npoints, npipes);
+  for (unsigned int c = 0; c < perms.size(); ++c)
+    {
+      std::cout << "Testing permutation " << c << " of " << perms.size()
+                << std::endl;
+
+      const auto &combination = perms[c];
+
+      std::array<std::pair<Point<dim>, double>, npipes> openings;
+      for (unsigned int i = 0; i < npipes; ++i)
+        openings[i] = points[combination[i]];
+
+      try
+        {
+          Triangulation<dim> tria;
+          tpipe(tria, openings, bifurcation);
+          tria.refine_global();
+          GridTools::volume(tria);
+        }
+      catch (...)
+        {
+          std::cerr << "Exception on processing permutation " << c << " of "
+                    << perms.size() << " with openings:";
+          for (unsigned int i = 0; i < npipes; ++i)
+            std::cerr << " (" << points[combination[i]].first << ")";
+          std::cerr << std::endl;
+        }
+    }
+}
+
+
+
+/**
+ * Exemplary application for a simple 3D T-pipe.
+ */
+int
+main()
+{
+  test_selection();
+  // test_permutations();
 
   return 0;
 }
