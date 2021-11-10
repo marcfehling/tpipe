@@ -4,6 +4,7 @@
 #include <deal.II/grid/grid_generator.h>
 #include <deal.II/grid/grid_out.h>
 #include <deal.II/grid/grid_tools.h>
+#include <deal.II/grid/manifold_lib.h>
 #include <deal.II/grid/tria.h>
 
 #include <deal.II/physics/transformations.h>
@@ -18,6 +19,355 @@
 
 
 using namespace dealii;
+
+
+// --------------------------------------------------------------------------------
+// Manifold description
+// --------------------------------------------------------------------------------
+
+namespace
+{
+  template <int spacedim>
+  Point<spacedim>
+  compute_normal(const Tensor<1, spacedim> & /*vector*/,
+                 bool /*normalize*/ = false)
+  {
+    return {};
+  }
+
+  Point<3>
+  compute_normal(const Tensor<1, 3> &vector, bool normalize = false)
+  {
+    Assert(vector.norm_square() != 0.,
+           ExcMessage("The direction parameter must not be zero!"));
+    Point<3> normal;
+    if (std::abs(vector[0]) >= std::abs(vector[1]) &&
+        std::abs(vector[0]) >= std::abs(vector[2]))
+      {
+        normal[1] = -1.;
+        normal[2] = -1.;
+        normal[0] = (vector[1] + vector[2]) / vector[0];
+      }
+    else if (std::abs(vector[1]) >= std::abs(vector[0]) &&
+             std::abs(vector[1]) >= std::abs(vector[2]))
+      {
+        normal[0] = -1.;
+        normal[2] = -1.;
+        normal[1] = (vector[0] + vector[2]) / vector[1];
+      }
+    else
+      {
+        normal[0] = -1.;
+        normal[1] = -1.;
+        normal[2] = (vector[0] + vector[1]) / vector[2];
+      }
+    if (normalize)
+      normal /= normal.norm();
+    return normal;
+  }
+} // namespace
+
+
+
+/**
+ * PipeSegmentManifold
+ */
+template <int dim, int spacedim = dim>
+class PipeSegmentManifold : public ChartManifold<dim, spacedim, 3>
+{
+public:
+  /**
+   * Constructor. If constructed with this constructor, the manifold described
+   * is a cylinder with an axis that points in direction #direction and goes
+   * through the given #point_on_axis. The direction may be arbitrarily
+   * scaled, and the given point may be any point on the axis. The tolerance
+   * value is used to determine if a point is on the axis.
+   */
+  PipeSegmentManifold(const Tensor<1, spacedim> &direction,
+                      const Point<spacedim> &    point_on_axis,
+                      const double               skeleton_length,
+                      const double               lateral_angle,
+                      const double               polar_angle,
+                      const double               azimuth_angle_left,
+                      const double               azimuth_angle_right,
+                      const double               tolerance = 1e-10);
+
+  /**
+   * Make a clone of this Manifold object.
+   */
+  virtual std::unique_ptr<Manifold<dim, spacedim>>
+  clone() const override;
+
+  /**
+   * Compute the cylindrical coordinates $(r, \phi, \lambda)$ for the given
+   * space point where $r$ denotes the distance from the axis,
+   * $\phi$ the angle between the given point and the computed normal
+   * direction, and $\lambda$ the axial position.
+   */
+  virtual Point<3>
+  pull_back(const Point<spacedim> &space_point) const override;
+
+  /**
+   * Compute the Cartesian coordinates for a chart point given in cylindrical
+   * coordinates $(r, \phi, \lambda)$, where $r$ denotes the distance from the
+   * axis, $\phi$ the angle between the given point and the computed normal
+   * direction, and $\lambda$ the axial position.
+   */
+  virtual Point<spacedim>
+  push_forward(const Point<3> &chart_point) const override;
+
+  /**
+   * Compute new points on the PipeSegmentManifold. See the documentation of
+   * the base class for a detailed description of what this function does.
+   */
+  virtual Point<spacedim>
+  get_new_point(const ArrayView<const Point<spacedim>> &surrounding_points,
+                const ArrayView<const double> &         weights) const override;
+
+protected:
+  /**
+   * A vector orthogonal to the normal direction.
+   */
+  const Tensor<1, spacedim> normal_direction;
+
+  /**
+   * The direction vector of the axis.
+   */
+  const Tensor<1, spacedim> direction;
+
+  /**
+   * An arbitrary point on the axis.
+   */
+  const Point<spacedim> point_on_axis;
+
+private:
+  /**
+   * length
+   */
+  const double skeleton_length;
+
+  /**
+   * angles
+   */
+  const double lateral_angle;
+  const double polar_angle;
+  const double azimuth_angle_left;
+  const double azimuth_angle_right;
+
+  /**
+   * Relative tolerance to measure zero distances.
+   */
+  const double tolerance;
+};
+
+
+
+template <int dim, int spacedim>
+PipeSegmentManifold<dim, spacedim>::PipeSegmentManifold(
+  const Tensor<1, spacedim> &direction,
+  const Point<spacedim> &    point_on_axis,
+  const double               skeleton_length,
+  const double               lateral_angle,
+  const double               polar_angle,
+  const double               azimuth_angle_left,
+  const double               azimuth_angle_right,
+  const double               tolerance)
+  : ChartManifold<dim, spacedim, 3>(Tensor<1, 3>({0, 2. * numbers::PI, 0}))
+  , normal_direction(compute_normal(direction, true))
+  , direction(direction / direction.norm())
+  , point_on_axis(point_on_axis)
+  , skeleton_length(skeleton_length)
+  , lateral_angle(lateral_angle)
+  , polar_angle(polar_angle)
+  , azimuth_angle_left(azimuth_angle_left)
+  , azimuth_angle_right(azimuth_angle_right)
+  , tolerance(tolerance)
+{
+  // do not use static_assert to make dimension-independent programming
+  // easier.
+  Assert(spacedim == 3,
+         ExcMessage("PipeSegmentManifold can only be used for spacedim==3!"));
+}
+
+
+
+template <int dim, int spacedim>
+std::unique_ptr<Manifold<dim, spacedim>>
+PipeSegmentManifold<dim, spacedim>::clone() const
+{
+  return std::make_unique<PipeSegmentManifold<dim, spacedim>>(direction,
+                                                              point_on_axis,
+                                                              skeleton_length,
+                                                              lateral_angle,
+                                                              polar_angle,
+                                                              azimuth_angle_left,
+                                                              azimuth_angle_right,
+                                                              tolerance);
+}
+
+
+
+template <int dim, int spacedim>
+Point<spacedim>
+PipeSegmentManifold<dim, spacedim>::get_new_point(
+  const ArrayView<const Point<spacedim>> &surrounding_points,
+  const ArrayView<const double> &         weights) const
+{
+  Assert(spacedim == 3,
+         ExcMessage("PipeSegmentManifold can only be used for spacedim==3!"));
+
+  // First check if the average in space lies on the axis.
+  Point<spacedim> middle;
+  double          average_length = 0.;
+  for (unsigned int i = 0; i < surrounding_points.size(); ++i)
+    {
+      middle += surrounding_points[i] * weights[i];
+      average_length += surrounding_points[i].square() * weights[i];
+    }
+  middle -= point_on_axis;
+  const double lambda = middle * direction;
+
+  if ((middle - direction * lambda).square() < tolerance * average_length)
+    // If new point is located on axis, no manifold description is necessary
+    return point_on_axis + direction * lambda;
+  else
+    // If not, using the ChartManifold should yield valid results.
+    return ChartManifold<dim, spacedim, 3>::get_new_point(surrounding_points,
+                                                          weights);
+}
+
+
+
+template <int dim, int spacedim>
+Point<3>
+PipeSegmentManifold<dim, spacedim>::pull_back(
+  const Point<spacedim> &space_point) const
+{
+  Assert(spacedim == 3,
+         ExcMessage("PipeSegmentManifold can only be used for spacedim==3!"));
+
+  // First find the projection of the given point to the axis.
+  const Tensor<1, spacedim> normalized_point = space_point - point_on_axis;
+  double                    lambda           = normalized_point * direction;
+  const Point<spacedim>     projection = point_on_axis + direction * lambda;
+  const Tensor<1, spacedim> p_diff     = space_point - projection;
+
+  // Then compute the angle between the projection direction and
+  // another vector orthogonal to the direction vector.
+  const double dot = normal_direction * p_diff;
+  const double det = direction * cross_product_3d(normal_direction, p_diff);
+  double       phi = std::atan2(det, dot);
+  // phi is in [-pi, +pi]
+
+  // --------------------------------------------------------------------------------
+  // undo warping
+
+  // can be precalculated ....
+  const double cosecant_polar  = 1. / std::sin(polar_angle);
+  const double cotangent_polar = std::cos(polar_angle) * cosecant_polar;
+
+  // positive y -> right (cyclic) neighbor
+  const double cotangent_azimuth_half_right =
+    std::cos(.5 * azimuth_angle_right) / std::sin(.5 * azimuth_angle_right);
+
+  // negative y -> left (anti-cyclic) neighbor
+  const double cotangent_azimuth_half_left =
+    std::cos(.5 * azimuth_angle_left) / std::sin(.5 * azimuth_angle_left);
+
+
+
+  // undo lateral rotation
+  phi -= lateral_angle;
+
+  // make sure phi is in interval [-pi, +pi]
+  while (phi > numbers::PI)
+    phi -= 2 * numbers::PI;
+  while (phi < -numbers::PI)
+    phi += 2 * numbers::PI;
+
+
+
+  Point<spacedim> my_point;
+  my_point[0] = p_diff.norm() * std::cos(phi);
+  my_point[1] = p_diff.norm() * std::sin(phi);
+
+  const double z_factor =
+    skeleton_length + my_point[0] * cotangent_polar -
+    std::abs(my_point[1]) * cosecant_polar *
+      ((phi > 0) ? cotangent_azimuth_half_right : cotangent_azimuth_half_left);
+  lambda /= z_factor;
+
+  // --------------------------------------------------------------------------------
+
+  // Return distance from the axis, angle and signed distance on the axis.
+  return Point<3>(p_diff.norm(), phi, lambda);
+}
+
+
+
+template <int dim, int spacedim>
+Point<spacedim>
+PipeSegmentManifold<dim, spacedim>::push_forward(
+  const Point<3> &chart_point) const
+{
+  Assert(spacedim == 3,
+         ExcMessage("PipeSegmentManifold can only be used for spacedim==3!"));
+
+  // --------------------------------------------------------------------------------
+  // redo warping
+
+  // can be precalculated ....
+  const double cosecant_polar  = 1. / std::sin(polar_angle);
+  const double cotangent_polar = std::cos(polar_angle) * cosecant_polar;
+
+  // positive y -> right (cyclic) neighbor
+  const double cotangent_azimuth_half_right =
+    std::cos(.5 * azimuth_angle_right) / std::sin(.5 * azimuth_angle_right);
+
+  // negative y -> left (anti-cyclic) neighbor
+  const double cotangent_azimuth_half_left =
+    std::cos(.5 * azimuth_angle_left) / std::sin(.5 * azimuth_angle_left);
+
+
+
+  double lambda = chart_point(2);
+  {
+    const double cosine_r = std::cos(chart_point(1)) * chart_point(0);
+    const double sine_r   = std::sin(chart_point(1)) * chart_point(0);
+
+    const double z_factor =
+      skeleton_length + cosine_r * cotangent_polar -
+      std::abs(sine_r) * cosecant_polar *
+        ((chart_point(1) > 0) ? cotangent_azimuth_half_right :
+                                cotangent_azimuth_half_left);
+    lambda *= z_factor;
+  }
+
+
+
+  // redo lateral rotation
+  double phi = chart_point(1) + lateral_angle;
+
+  // make sure phi is in interval [-pi, +pi]
+  while (phi > numbers::PI)
+    phi -= 2 * numbers::PI;
+  while (phi < -numbers::PI)
+    phi += 2 * numbers::PI;
+
+  // --------------------------------------------------------------------------------
+
+  // Rotate the orthogonal direction by the given angle
+  const double              sine_r   = std::sin(phi) * chart_point(0);
+  const double              cosine_r = std::cos(phi) * chart_point(0);
+  const Tensor<1, spacedim> dxn = cross_product_3d(direction, normal_direction);
+  const Tensor<1, spacedim> intermediate =
+    normal_direction * cosine_r + dxn * sine_r;
+
+  // Finally, put everything together.
+  return point_on_axis + direction * lambda + intermediate;
+}
+// --------------------------------------------------------------------------------
+
 
 
 /**
@@ -177,7 +527,10 @@ tee(Triangulation<3, 3> &                             tria,
   // be merged with the parameter triangulation in the end.
   Assert(tria.n_cells() == 0,
          ExcMessage("The output triangulation object needs to be empty."));
-  for (unsigned int p = 0; p < n_pipes; ++p)
+  std::vector<PipeSegmentManifold<dim, spacedim>> manifolds;
+  // std::vector<CylindricalManifold<dim, spacedim>> manifolds;
+  for (unsigned int p = 0; p < 1; ++p) // DEBUG
+  // for (unsigned int p = 0; p < n_pipes; ++p)
     {
       Triangulation<dim, spacedim> pipe;
 
@@ -190,6 +543,7 @@ tee(Triangulation<3, 3> &                             tria,
       const unsigned int n_slices =
         1 + std::ceil(skeleton_length[p] /
                       std::min(openings[p].second, bifurcation.second));
+      // const unsigned int n_slices = 2; // DEBUG
       GridGenerator::extrude_triangulation(tria_base,
                                            n_slices,
                                            /*height*/ 1.,
@@ -365,17 +719,27 @@ tee(Triangulation<3, 3> &                             tria,
 
       // Now we laterally rotate the pipe segment around its own symmetry axis
       // that the edge matches the polar axis.
-      GridTools::rotate(
-        skeleton_unit[p],
+      const double lateral_angle =
         Physics::VectorRelations::signed_angle(Rx,
                                                projected_normal,
-                                               /*axis=*/skeleton_unit[p]),
-        pipe);
+                                               /*axis=*/skeleton_unit[p]);
+      GridTools::rotate(skeleton_unit[p], lateral_angle, pipe);
 
       //
       // Step 5: shift to final position
       //
       GridTools::shift(openings[p].first, pipe);
+
+      // set manifold/boundary ids. either here or after extrude_triangulation
+      std::cout << "lateral angle " << lateral_angle << std::endl;
+      manifolds.emplace_back(skeleton_unit[p],
+                             openings[p].first,
+                             skeleton_length[p],
+                             lateral_angle,
+                             polar_angle,
+                             azimuth_angle_left,
+                             azimuth_angle_right,
+                             tolerance);
 
 #if false
       std::ofstream out("pipe-" + std::to_string(p) + ".vtk");
@@ -400,6 +764,10 @@ tee(Triangulation<3, 3> &                             tria,
             // cone mantle
             face->set_boundary_id(n_pipes);
         }
+
+  for (unsigned int p=0; p < 1; ++p) // DEBUG
+  // for (unsigned int p = 0; p < n_pipes; ++p)
+    tria.set_manifold(p, manifolds[p]);
 }
 
 
@@ -462,6 +830,7 @@ test_selection()
     refine_and_write(tria, 2, "ypipe");
   }
 
+  /*
   // t-pipe in plane
   {
     const std::array<std::pair<Point<spacedim>, double>, 3> openings = {
@@ -500,6 +869,7 @@ test_selection()
 
     refine_and_write(tria, 2, "irregular");
   }
+  */
 }
 
 
