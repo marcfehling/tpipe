@@ -28,9 +28,9 @@ using namespace dealii;
  *                    the bifurcation.
  */
 void
-tpipe(Triangulation<3, 3> &                             tria,
+tpipe(Triangulation<3, 3>                              &tria,
       const std::array<std::pair<Point<3>, double>, 3> &openings,
-      const std::pair<Point<3>, double> &               bifurcation)
+      const std::pair<Point<3>, double>                &bifurcation)
 {
   constexpr unsigned int dim      = 3;
   constexpr unsigned int spacedim = 3;
