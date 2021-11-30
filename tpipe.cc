@@ -7,6 +7,7 @@
 #include <deal.II/grid/tria.h>
 
 #include <deal.II/physics/transformations.h>
+#include <deal.II/physics/vector_relations.h>
 
 #include <algorithm>
 #include <array>
@@ -42,34 +43,6 @@ tpipe(Triangulation<3, 3>                              &tria,
   //
   // helper functions describing relations
   //
-
-  // calculate angle between two vectors with the dot product
-  const auto angle = [](const vector &a, const vector &b) -> double {
-    Assert(a.norm() > tolerance, ExcInternalError());
-    Assert(b.norm() > tolerance, ExcInternalError());
-    auto argument = (a * b) / a.norm() / b.norm();
-
-    // std::acos returns nan when out of bounds [-1,+1].
-    // if argument slightly overshoots these bounds, set it to the bound.
-    if ((1. - std::abs(argument)) < tolerance)
-      argument = std::copysign(1., argument);
-
-    return std::acos(argument);
-  };
-
-  // calculate angle between two vectors with atan2
-  const auto angle_around_axis =
-    [](const vector &a, const vector &b, const vector &n) -> double {
-    Assert(std::abs(n.norm() - 1.) < tolerance, ExcInternalError());
-    Assert(std::abs(n * a) < tolerance, ExcInternalError());
-    Assert(std::abs(n * b) < tolerance, ExcInternalError());
-
-    const double dot = a * b;
-    const double det = n * cross_product_3d(a, b);
-
-    return std::atan2(det, dot);
-  };
-
 
   const auto cyclic = [n_pipes](const unsigned int i) -> unsigned int {
     return (i < (n_pipes - 1)) ? i + 1 : 0;
@@ -187,7 +160,8 @@ tpipe(Triangulation<3, 3>                              &tria,
       //
       // step 2: transform to pipe segment
       //
-      const double polar_angle = angle(skeleton[p], normal);
+      const double polar_angle =
+        Physics::VectorRelations::angle(skeleton[p], normal);
       Assert(std::abs(polar_angle) > tolerance &&
                std::abs(polar_angle - numbers::PI) > tolerance,
              ExcMessage("Invalid input."));
@@ -196,7 +170,9 @@ tpipe(Triangulation<3, 3>                              &tria,
 
       // positive y -> right (cyclic) neighbor
       const double azimuth_angle_right =
-        angle_around_axis(skeleton_plane[p], skeleton_plane[cyclic(p)], normal);
+        Physics::VectorRelations::signed_angle(skeleton_plane[p],
+                                               skeleton_plane[cyclic(p)],
+                                               /*axis=*/normal);
       Assert(std::abs(azimuth_angle_right) > tolerance,
              ExcMessage("Invalid input: at least two openings located "
                         "in same direction from bifurcation"));
@@ -205,9 +181,9 @@ tpipe(Triangulation<3, 3>                              &tria,
 
       // negative y -> left (anti-cyclic) neighbor
       const double azimuth_angle_left =
-        angle_around_axis(skeleton_plane[p],
-                          skeleton_plane[anticyclic(p)],
-                          -normal);
+        Physics::VectorRelations::signed_angle(skeleton_plane[p],
+                                               skeleton_plane[anticyclic(p)],
+                                               /*axis=*/-normal);
       Assert(std::abs(azimuth_angle_left) > tolerance,
              ExcMessage("Invalid input: at least two openings located "
                         "in same direction from bifurcation"));
@@ -237,8 +213,9 @@ tpipe(Triangulation<3, 3>                              &tria,
       //
       // step 3: rotate to match skeleton
       //
-      const auto rotation_angle = angle(directions[2], skeleton_unit[p]);
-      const auto rotation_axis  = [&]() {
+      const auto rotation_angle =
+        Physics::VectorRelations::angle(directions[2], skeleton_unit[p]);
+      const auto rotation_axis = [&]() {
         const auto rotation_axis =
           cross_product_3d(directions[2], skeleton_unit[p]);
         const auto norm = rotation_axis.norm();
@@ -269,11 +246,12 @@ tpipe(Triangulation<3, 3>                              &tria,
              ExcInternalError());
       Assert(std::abs(skeleton_unit[p] * Rx) < tolerance, ExcInternalError());
 
-      GridTools::rotate(skeleton_unit[p],
-                        angle_around_axis(Rx,
-                                          projected_normal,
-                                          skeleton_unit[p]),
-                        pipe);
+      GridTools::rotate(
+        skeleton_unit[p],
+        Physics::VectorRelations::signed_angle(Rx,
+                                               projected_normal,
+                                               /*axis=*/skeleton_unit[p]),
+        pipe);
 
       //
       // step 5: shift to position
