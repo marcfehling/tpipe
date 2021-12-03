@@ -61,16 +61,6 @@ tpipe(Triangulation<3, 3>                              &tria,
   constexpr std::array<vector, dim> directions = {
     {vector({1., 0., 0.}), vector({0., 1., 0.}), vector({0., 0., 1.})}};
 
-  // create reference hyper-ball domain in 2D that will act as a cross-section
-  // for each pipe and extract components of this reference triangulation
-  const auto tria_base = []() {
-    Triangulation<dim - 1, spacedim - 1> tria_base;
-    GridGenerator::hyper_ball_balanced(tria_base,
-                                       /*center=*/Point<spacedim - 1>(),
-                                       /*radius=*/1.);
-    return tria_base;
-  }();
-
   // skeleton corresponding to the axis of symmetry in the center of each pipe
   const std::array<vector, n_pipes> skeleton = [&]() {
     std::array<vector, n_pipes> skeleton;
@@ -82,13 +72,19 @@ tpipe(Triangulation<3, 3>                              &tria,
   const auto skeleton_length = [&]() {
     std::array<double, n_pipes> skeleton_length;
     for (unsigned int p = 0; p < n_pipes; ++p)
-      {
-        skeleton_length[p] = skeleton[p].norm();
-        Assert(skeleton_length[p] > tolerance,
-               ExcMessage("Invalid input: bifurcation matches opening."))
-      }
+      skeleton_length[p] = skeleton[p].norm();
     return skeleton_length;
   }();
+
+#ifdef DEBUG
+  const double tolerance_length =
+    tolerance *
+    *std::max_element(skeleton_length.begin(), skeleton_length.end());
+#endif
+
+  for (unsigned int p = 0; p < n_pipes; ++p)
+    Assert(skeleton_length[p] > tolerance_length,
+           ExcMessage("Invalid input: bifurcation matches opening."));
 
   const auto skeleton_unit = [&]() {
     std::array<vector, n_pipes> skeleton_unit;
@@ -111,7 +107,7 @@ tpipe(Triangulation<3, 3>                              &tria,
 
     const auto normal =
       cross_product_3d(points[1] - points[0], points[2] - points[0]);
-    Assert(normal.norm() > tolerance,
+    Assert(normal.norm() > tolerance_length,
            ExcMessage("Invalid input: all three openings "
                       "are located on one line."));
 
@@ -126,14 +122,24 @@ tpipe(Triangulation<3, 3>                              &tria,
     for (unsigned int p = 0; p < n_pipes; ++p)
       {
         skeleton_plane[p] = skeleton[p] - (skeleton[p] * normal) * normal;
-        Assert(std::abs(skeleton_plane[p] * normal) < tolerance,
+        Assert(std::abs(skeleton_plane[p] * normal) <
+                 tolerance * skeleton_plane[p].norm(),
                ExcInternalError());
-        Assert(skeleton_plane[p].norm() > tolerance,
+        Assert(skeleton_plane[p].norm() > tolerance_length,
                ExcMessage("Invalid input."));
       }
     return skeleton_plane;
   }();
 
+  // create reference hyper-ball domain in 2D that will act as a cross-section
+  // for each pipe and extract components of this reference triangulation
+  const auto tria_base = []() {
+    Triangulation<dim - 1, spacedim - 1> tria_base;
+    GridGenerator::hyper_ball_balanced(tria_base,
+                                       /*center=*/Point<spacedim - 1>(),
+                                       /*radius=*/1.);
+    return tria_base;
+  }();
 
   //
   // build pipe
