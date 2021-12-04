@@ -195,9 +195,10 @@ tee(Triangulation<3, 3> &                             tria,
                                            /*height*/ 1.,
                                            pipe);
 
-      // Set all material, boundary, and manifold indicators on the unit
-      // cylinder, simply because they are easier to handle in this geometry.
-      // See general documentation of this function.
+      // Set all material and manifold indicators on the unit cylinder, simply
+      // because they are easier to handle in this geometry. We will set
+      // boundary indicators at the end of the function. See general
+      // documentation of this function.
       for (const auto &cell : pipe.active_cell_iterators())
         {
           cell->set_material_id(p);
@@ -210,7 +211,6 @@ tee(Triangulation<3, 3> &                             tria,
                 if (std::abs(center_z) < tolerance)
                   {
                     // opening cross section
-                    face->set_boundary_id(p);
                   }
                 else if (std::abs(center_z - 1.) < tolerance)
                   {
@@ -219,7 +219,6 @@ tee(Triangulation<3, 3> &                             tria,
                 else
                   {
                     // cone mantle
-                    face->set_boundary_id(n_pipes);
                     face->set_manifold_id(p);
                   }
               }
@@ -384,13 +383,23 @@ tee(Triangulation<3, 3> &                             tria,
 #endif
 
       GridGenerator::merge_triangulations(
-        pipe, tria, tria, tolerance, /*copy_manifold_ids=*/true);
+        pipe, tria, tria, tolerance_length, /*copy_manifold_ids=*/true);
     }
 
   // Since GridGenerator::merge_triangulation() does not copy boundary IDs, we
   // need to set them after the final geometry is created. Luckily, boundary IDs
   // match with manifold IDs, so we simply translate them.
-  // TODO
+  for (const auto &cell : tria.active_cell_iterators())
+    for (const auto &face : cell->face_iterators())
+      if (face->at_boundary())
+        {
+          if (face->manifold_id() == numbers::flat_manifold_id)
+            // opening cross section
+            face->set_boundary_id(cell->material_id());
+          else
+            // cone mantle
+            face->set_boundary_id(n_pipes);
+        }
 }
 
 
