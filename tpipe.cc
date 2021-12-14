@@ -472,10 +472,10 @@ tee(Triangulation<3, 3> &                             tria,
       // We create a unit cylinder by extrusion from the base cross section.
       // The number of layers depends on the ratio of the length of the skeleton
       // and the minimal radius in the pipe segment.
-      const unsigned int n_slices =
-        1 + std::ceil(skeleton_length[p] /
-                      std::min(openings[p].second, bifurcation.second));
-      // const unsigned int n_slices = 2; // DEBUG
+      // const unsigned int n_slices =
+      //   1 + std::ceil(skeleton_length[p] /
+      //                 std::min(openings[p].second, bifurcation.second));
+      const unsigned int n_slices = 2; // DEBUG
       GridGenerator::extrude_triangulation(tria_base,
                                            n_slices,
                                            /*height*/ 1.,
@@ -702,7 +702,7 @@ tee(Triangulation<3, 3> &                             tria,
             face->set_boundary_id(n_pipes);
         }
 
-  for (unsigned int p=0; p < 1; ++p) // DEBUG
+  for (unsigned int p = 0; p < 1; ++p) // DEBUG
   // for (unsigned int p = 0; p < n_pipes; ++p)
     tria.set_manifold(p, manifolds[p]);
 }
@@ -752,6 +752,7 @@ test_selection()
   constexpr unsigned int dim      = 3;
   constexpr unsigned int spacedim = 3;
 
+  /*
   // y-pipe in plane
   {
     const std::array<std::pair<Point<spacedim>, double>, 3> openings = {
@@ -766,8 +767,8 @@ test_selection()
 
     refine_and_write(tria, 2, "ypipe");
   }
+  */
 
-  /*
   // t-pipe in plane
   {
     const std::array<std::pair<Point<spacedim>, double>, 3> openings = {
@@ -781,6 +782,7 @@ test_selection()
     refine_and_write(tria, 2, "tpipe");
   }
 
+  /*
   // corner piece
   {
     const std::array<std::pair<Point<spacedim>, double>, 3> openings = {
