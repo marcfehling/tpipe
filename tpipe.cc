@@ -55,6 +55,19 @@ namespace
       double cotangent_azimuth_half_left;
     };
 
+
+    template<int spacedim>
+    double compute_z_factor(const Parameters<spacedim>& parameters,
+                            double x,
+                            double y)
+    {
+      return parameters.skeleton_length + x * parameters.cotangent_polar -
+      std::abs(y) * parameters.cosecant_polar *
+        ((y > 0) ? parameters.cotangent_azimuth_half_right : parameters.cotangent_azimuth_half_left);
+    }
+
+
+
     /**
      * Manifold for PipeSegment
      */
@@ -70,13 +83,7 @@ namespace
        * axis. The tolerance value is used to determine if a point is on the
        * axis.
        */
-      Manifold(const Tensor<1, spacedim> &direction,
-                            const Point<spacedim> &    point_on_axis,
-                            const Tensor<1, spacedim> &normal_direction,
-                            const double               skeleton_length,
-                            const double               polar_angle,
-                            const double               azimuth_angle_left,
-                            const double               azimuth_angle_right,
+      Manifold(const Parameters<spacedim> &parameters,
                             const double               tolerance = 1e-10);
 
       /**
@@ -115,7 +122,7 @@ namespace
       Point<spacedim>
       to_pipe_segment(const Point<3> &cylinder_point) const;
 
-    protected:
+    protected:   
       /**
        * The direction vector of the axis.
        */
@@ -133,16 +140,9 @@ namespace
 
     private:
       /**
-       * length
+       * Parameters.
        */
-      const double skeleton_length;
-
-      /**
-       * angles
-       */
-      const double polar_angle;
-      const double azimuth_angle_left;
-      const double azimuth_angle_right;
+      const Parameters<spacedim> parameters;
 
       /**
        * Relative tolerance to measure zero distances.
@@ -154,22 +154,13 @@ namespace
 
     template <int dim, int spacedim>
     Manifold<dim, spacedim>::Manifold(
-      const Tensor<1, spacedim> &direction,
-      const Point<spacedim> &    point_on_axis,
-      const Tensor<1, spacedim> &normal_direction,
-      const double               skeleton_length,
-      const double               polar_angle,
-      const double               azimuth_angle_left,
-      const double               azimuth_angle_right,
+      const Parameters<spacedim> &parameters,
       const double               tolerance)
       : ChartManifold<dim, spacedim, 3>(Tensor<1, 3>({0, 2. * numbers::PI, 0}))
-      , direction(direction / direction.norm())
-      , point_on_axis(point_on_axis)
-      , normal_direction(normal_direction)
-      , skeleton_length(skeleton_length)
-      , polar_angle(polar_angle)
-      , azimuth_angle_left(azimuth_angle_left)
-      , azimuth_angle_right(azimuth_angle_right)
+      , parameters(parameters)
+      , direction(parameters.skeleton_unit)
+      , point_on_axis(parameters.opening)
+      , normal_direction(parameters.bifurcation_edge_on_opening / parameters.bifurcation_edge_on_opening.norm())
       , tolerance(tolerance)
     {
       // do not use static_assert to make dimension-independent programming
@@ -184,13 +175,7 @@ namespace
     std::unique_ptr<dealii::Manifold<dim, spacedim>>
     Manifold<dim, spacedim>::clone() const
     {
-      return std::make_unique<Manifold<dim, spacedim>>(direction,
-                                                                    point_on_axis,
-                                                                    normal_direction,
-                                                                    skeleton_length,
-                                                                    polar_angle,
-                                                                    azimuth_angle_left,
-                                                                    azimuth_angle_right,
+      return std::make_unique<Manifold<dim, spacedim>>(parameters,
                                                                     tolerance);
     }
 
@@ -246,27 +231,7 @@ namespace
       // --------------------------------------------------------------------------------
       // undo warping
 
-      // can be precalculated ....
-      const double cosecant_polar  = 1. / std::sin(polar_angle);
-      const double cotangent_polar = std::cos(polar_angle) * cosecant_polar;
-
-      // positive y -> right (cyclic) neighbor
-      const double cotangent_azimuth_half_right =
-        std::cos(.5 * azimuth_angle_right) / std::sin(.5 * azimuth_angle_right);
-
-      // negative y -> left (anti-cyclic) neighbor
-      const double cotangent_azimuth_half_left =
-        std::cos(.5 * azimuth_angle_left) / std::sin(.5 * azimuth_angle_left);
-
-      Point<spacedim> my_point;
-      my_point[0] = p_diff.norm() * std::cos(phi);
-      my_point[1] = p_diff.norm() * std::sin(phi);
-
-      const double z_factor =
-        skeleton_length + my_point[0] * cotangent_polar -
-        std::abs(my_point[1]) * cosecant_polar *
-          ((phi > 0) ? cotangent_azimuth_half_right : cotangent_azimuth_half_left);
-      lambda /= z_factor;
+      lambda /= compute_z_factor(parameters, p_diff.norm() * std::cos(phi), p_diff.norm() * std::sin(phi));
 
       // --------------------------------------------------------------------------------
 
@@ -284,43 +249,11 @@ namespace
              ExcMessage(
                "PipeSegment::Manifold can only be used for spacedim==3!"));
 
-      // --------------------------------------------------------------------------------
-      // redo warping
-
-      // can be precalculated ....
-      const double cosecant_polar  = 1. / std::sin(polar_angle);
-      const double cotangent_polar = std::cos(polar_angle) * cosecant_polar;
-
-      // positive y -> right (cyclic) neighbor
-      const double cotangent_azimuth_half_right =
-        std::cos(.5 * azimuth_angle_right) / std::sin(.5 * azimuth_angle_right);
-
-      // negative y -> left (anti-cyclic) neighbor
-      const double cotangent_azimuth_half_left =
-        std::cos(.5 * azimuth_angle_left) / std::sin(.5 * azimuth_angle_left);
-
-
-
-      double lambda = chart_point(2);
-      {
-        const double cosine_r = std::cos(chart_point(1)) * chart_point(0);
-        const double sine_r   = std::sin(chart_point(1)) * chart_point(0);
-
-        const double z_factor =
-          skeleton_length + cosine_r * cotangent_polar -
-          std::abs(sine_r) * cosecant_polar *
-            ((sine_r > 0) ? cotangent_azimuth_half_right :
-                            cotangent_azimuth_half_left);
-        lambda *= z_factor;
-      }
-
-
-
-      // --------------------------------------------------------------------------------
-
       // Rotate the orthogonal direction by the given angle
-      const double sine_r   = std::sin(chart_point(1)) * chart_point(0);
-      const double cosine_r = std::cos(chart_point(1)) * chart_point(0);
+      const double sine_r   = chart_point(0) * std::sin(chart_point(1));
+      const double cosine_r = chart_point(0) * std::cos(chart_point(1));
+      const double lambda   = chart_point(2) * compute_z_factor(parameters, cosine_r, sine_r);
+
       const vector<spacedim> dxn =
         cross_product_3d(direction, normal_direction);
       const vector<spacedim> intermediate =
@@ -360,7 +293,13 @@ namespace
  * boundary ID 3.
  *
  * <em>Manifold IDs</em> will be set on the mantles of each truncated cone in
- * the same way. Each cone will have a Manifold ??? assigned.
+ * the same way. Each cone will have a special manifold object assigned, which is based on the CylindricalManifold class.
+ * All mantle cells will have the manifold ID 3. If desired, you can assign an (expensive) TransfiniteInterpolationManifold object to that particular layer of cells with the following code snippet.
+ * @code
+ * static TransfiniteInterpolationManifold<3> transfinite;
+ * transfinite.initialize(triangulation);
+ * triangulation.set_manifold(3, transfinite);
+ * @endcode
  *
  * @pre The triangulation passed as argument needs to be empty when calling this
  * function.
@@ -481,11 +420,15 @@ pipe_junction(Triangulation<3, 3>                              &tria,
       {
         pipe.bifurcation_edge = normal;
 
+        // Projections of all skeleton vectors perpendicular to the normal vector, or
+        // in other words, onto the plane described above.
         pipe.skeleton_on_plane =
           pipe.skeleton - (pipe.skeleton * normal) * normal;
         Assert(std::abs(pipe.skeleton_on_plane * normal) < tolerance_length,
                ExcInternalError());
 
+        // Projections of all skeleton vectors perpendicular to the normal vector, or
+        // in other words, onto the plane described above.
         pipe.bifurcation_edge_on_opening =
           normal - (normal * pipe.skeleton_unit) * pipe.skeleton_unit;
         Assert(std::abs(pipe.bifurcation_edge_on_opening * pipe.skeleton_unit) <
@@ -494,6 +437,9 @@ pipe_junction(Triangulation<3, 3>                              &tria,
       }
 
 
+    // We compute angle relations between the skeleton vectors viewed from the bifurcation
+    // point. For this purpose, we interpret the bifurcation as a ball joint
+    // as described above.
     for (unsigned int p = 0; p < n_pipes; ++p)
       {
         auto &pipe = pipe_parameters[p];
@@ -626,10 +572,6 @@ pipe_junction(Triangulation<3, 3>                              &tria,
       //          |   |   |           |   |   |
       //        ------+----->y      ------+----->x
 
-      // Before transforming the unit cylinder however, we compute angle
-      // relations between the skeleton vectors viewed from the bifurcation
-      // point. For this purpose, we interpret the bifurcation as a ball joint
-      // as described above.
       const auto pipe_segment = [&](const Point<spacedim> &pt) {
         // We transform the cylinder in x- and y-direction to become a truncated
         // cone, similarly to GridGenerator::truncated_cone().
@@ -654,7 +596,9 @@ pipe_junction(Triangulation<3, 3>                              &tria,
         Assert(z_factor > 0,
                ExcMessage("Invalid input: at least one pipe segment "
                           "is not long enough in this configuration"));
-        const double z_new = z_factor * pt[2];
+        const double z_new_old = z_factor * pt[2];
+
+        const double z_new = compute_z_factor(prm, x_new, y_new) * pt[2];
 
         return Point<spacedim>(x_new, y_new, z_new);
       };
@@ -716,18 +660,8 @@ pipe_junction(Triangulation<3, 3>                              &tria,
       GridTools::shift(openings[p].first, pipe);
 
       // set manifold/boundary ids. either here or after extrude_triangulation
-      manifolds.emplace_back(prm.skeleton_unit,
-                             openings[p].first,
-                             prm.bifurcation_edge_on_opening /
-                               prm.bifurcation_edge_on_opening.norm(),
-                             prm.skeleton_length,
-                             prm.polar_angle,
-                             prm.azimuth_angle_left,
-                             prm.azimuth_angle_right,
+      manifolds.emplace_back(prm,
                              tolerance);
-
-      //manifolds.emplace_back(prm,
-      //                       tolerance);
 
 #if false
       std::ofstream out("pipe-" + std::to_string(p) + ".vtk");
@@ -759,7 +693,6 @@ pipe_junction(Triangulation<3, 3>                              &tria,
 //  static TransfiniteInterpolationManifold<dim, spacedim> transfinite;
 //  transfinite.initialize(tria);
 //  tria.set_manifold(n_pipes, transfinite);
-  // add mapping cache???
 }
 
 
