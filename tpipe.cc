@@ -21,71 +21,29 @@
 using namespace dealii;
 
 
-/**
- * Initialize the given triangulation with a tee, which is the intersection of
- * three truncated cones.
- *
- * The geometry has four characteristic cross sections, located at the three
- * openings and the bifurcation. They need to be specified via the function's
- * arguments: each cross section is described by a characteristic point and a
- * radius. The cross sections at the openings are circles and are described by
- * their center point and radius. The bifurcation point describes where the
- * symmetry axes of all cones meet.
- *
- * Each truncated cone is transformed so that the three merge seamlessly into
- * each other. The bifurcation radius describes the radius that each original,
- * untransformed, truncated cone would have at the bifurcation. This radius is
- * necessary for the construction of the geometry and can, in general, no longer
- * be found in the final result.
- *
- * Each cone will be assigned a distinct <em>material ID</em> that matches the
- * index of their opening in the argument @p openings. For example, the cone
- * which connects to opening with index 0 in @p openings will have material ID 0.
- *
- * Similarly, <em>boundary IDs</em> are assigned to the cross-sections of each
- * opening to match their index. All other boundary faces will be assigned
- * boundary ID 3.
- *
- * <em>Manifold IDs</em> will be set on the mantles of each truncated cone in
- * the same way. Each cone will have a Manifold ??? assigned.
- *
- * @pre The triangulation passed as argument needs to be empty when calling this
- * function.
- *
- * @note Only implemented for `dim = 3` and `spacedim = 3`.
- *
- * @param tria An empty triangulation which will hold the tee geometry.
- * @param openings Center point and radius of each opening.
- * @param bifurcation Center point of the bifurcation and hypothetical radius of
- *                    each truncated cone at the bifurcation.
- */
-void
-tee(Triangulation<3, 3>                              &tria,
-    const std::array<std::pair<Point<3>, double>, 3> &openings,
-    const std::pair<Point<3>, double>                &bifurcation);
-
-
 namespace
 {
+  template <int spacedim>
+  using vector = Tensor<1, spacedim, double>;
+
   namespace PipeSegment
   {
-    /**
-     * Parameters for PipeSegment.
-     */
     template <int spacedim>
-    class Parameters
+    struct Parameters
     {
-    protected:
-      Parameters();
+      vector<spacedim> opening;
+      double           radius_at_opening;
 
-      using vector = Tensor<1, spacedim, double>;
+      vector<spacedim> bifurcation;
+      double           radius_at_bifurcation;
 
-      vector skeleton;
-      vector skeleton_unit;
-      double skeleton_length;
+      vector<spacedim> skeleton;
+      double           skeleton_length;
+      vector<spacedim> skeleton_unit;
 
-      double radius_opening;
-      double radius_bifurcation;
+      vector<spacedim> bifurcation_edge;
+      vector<spacedim> skeleton_on_plane;
+      vector<spacedim> bifurcation_edge_on_opening;
 
       double polar_angle;
       double azimuth_angle_left;
@@ -95,9 +53,6 @@ namespace
       double cotangent_polar;
       double cotangent_azimuth_half_right;
       double cotangent_azimuth_half_left;
-
-      friend void
-      tee();
     };
 
     /**
@@ -116,13 +71,13 @@ namespace
        * axis.
        */
       Manifold(const Tensor<1, spacedim> &direction,
-               const Point<spacedim>     &point_on_axis,
-               const Tensor<1, spacedim> &normal_direction,
-               const double               skeleton_length,
-               const double               polar_angle,
-               const double               azimuth_angle_left,
-               const double               azimuth_angle_right,
-               const double               tolerance = 1e-10);
+                            const Point<spacedim> &    point_on_axis,
+                            const Tensor<1, spacedim> &normal_direction,
+                            const double               skeleton_length,
+                            const double               polar_angle,
+                            const double               azimuth_angle_left,
+                            const double               azimuth_angle_right,
+                            const double               tolerance = 1e-10);
 
       /**
        * Make a clone of this Manifold object.
@@ -149,12 +104,16 @@ namespace
       push_forward(const Point<3> &chart_point) const override;
 
       /**
-       * Compute new points on the PipeSegmentManifold. See the documentation of
-       * the base class for a detailed description of what this function does.
+       * TODO: Doc
        */
-      virtual Point<spacedim>
-      get_new_point(const ArrayView<const Point<spacedim>> &surrounding_points,
-                    const ArrayView<const double> &weights) const override;
+      Point<3>
+      to_unit_cylinder(const Point<spacedim> &pipe_point) const;
+
+      /**
+       * TODO: Doc
+       */
+      Point<spacedim>
+      to_pipe_segment(const Point<3> &cylinder_point) const;
 
     protected:
       /**
@@ -196,7 +155,7 @@ namespace
     template <int dim, int spacedim>
     Manifold<dim, spacedim>::Manifold(
       const Tensor<1, spacedim> &direction,
-      const Point<spacedim>     &point_on_axis,
+      const Point<spacedim> &    point_on_axis,
       const Tensor<1, spacedim> &normal_direction,
       const double               skeleton_length,
       const double               polar_angle,
@@ -216,8 +175,7 @@ namespace
       // do not use static_assert to make dimension-independent programming
       // easier.
       Assert(spacedim == 3,
-             ExcMessage(
-               "PipeSegmentManifold can only be used for spacedim==3!"));
+             ExcMessage("PipeSegmentManifold can only be used for spacedim==3!"));
     }
 
 
@@ -227,45 +185,35 @@ namespace
     Manifold<dim, spacedim>::clone() const
     {
       return std::make_unique<Manifold<dim, spacedim>>(direction,
-                                                       point_on_axis,
-                                                       normal_direction,
-                                                       skeleton_length,
-                                                       polar_angle,
-                                                       azimuth_angle_left,
-                                                       azimuth_angle_right,
-                                                       tolerance);
+                                                                    point_on_axis,
+                                                                    normal_direction,
+                                                                    skeleton_length,
+                                                                    polar_angle,
+                                                                    azimuth_angle_left,
+                                                                    azimuth_angle_right,
+                                                                    tolerance);
+    }
+
+
+
+    template <int dim, int spacedim>
+    Point<3>
+    Manifold<dim, spacedim>::to_unit_cylinder(const Point<spacedim> &pipe_point) const
+    {
+      Point<spacedim> cylinder_point;
+
+      return cylinder_point;
     }
 
 
 
     template <int dim, int spacedim>
     Point<spacedim>
-    Manifold<dim, spacedim>::get_new_point(
-      const ArrayView<const Point<spacedim>> &surrounding_points,
-      const ArrayView<const double>          &weights) const
+    Manifold<dim, spacedim>::to_pipe_segment(const Point<3> &cylinder_point) const
     {
-      Assert(spacedim == 3,
-             ExcMessage(
-               "PipeSegment::Manifold can only be used for spacedim==3!"));
+      Point<spacedim> pipe_point;
 
-      // First check if the average in space lies on the axis.
-      Point<spacedim> middle;
-      double          average_length = 0.;
-      for (unsigned int i = 0; i < surrounding_points.size(); ++i)
-        {
-          middle += surrounding_points[i] * weights[i];
-          average_length += surrounding_points[i].square() * weights[i];
-        }
-      middle -= point_on_axis;
-      const double lambda = middle * direction;
-
-      if ((middle - direction * lambda).square() < tolerance * average_length)
-        // If new point is located on axis, no manifold description is necessary
-        return point_on_axis + direction * lambda;
-      else
-        // If not, using the ChartManifold should yield valid results.
-        return ChartManifold<dim, spacedim, 3>::get_new_point(
-          surrounding_points, weights);
+      return pipe_point;
     }
 
 
@@ -279,10 +227,13 @@ namespace
                "PipeSegment::Manifold can only be used for spacedim==3!"));
 
       // First find the projection of the given point to the axis.
-      const Tensor<1, spacedim> normalized_point = space_point - point_on_axis;
-      double                    lambda           = normalized_point * direction;
-      const Point<spacedim>     projection = point_on_axis + direction * lambda;
-      const Tensor<1, spacedim> p_diff     = space_point - projection;
+      const vector<spacedim> normalized_point = space_point - point_on_axis;
+      double                 lambda           = normalized_point * direction;
+      const Point<spacedim>  projection = point_on_axis + direction * lambda;
+      const vector<spacedim> p_diff     = space_point - projection;
+
+      Assert(p_diff.norm() > tolerance, // tolerance length?
+             ExcMessage("This class won't handle points on axis."));
 
       // Then compute the angle between the projection direction and
       // another vector orthogonal to the direction vector.
@@ -311,10 +262,10 @@ namespace
       my_point[0] = p_diff.norm() * std::cos(phi);
       my_point[1] = p_diff.norm() * std::sin(phi);
 
-      const double z_factor = skeleton_length + my_point[0] * cotangent_polar -
-                              std::abs(my_point[1]) * cosecant_polar *
-                                ((phi > 0) ? cotangent_azimuth_half_right :
-                                             cotangent_azimuth_half_left);
+      const double z_factor =
+        skeleton_length + my_point[0] * cotangent_polar -
+        std::abs(my_point[1]) * cosecant_polar *
+          ((phi > 0) ? cotangent_azimuth_half_right : cotangent_azimuth_half_left);
       lambda /= z_factor;
 
       // --------------------------------------------------------------------------------
@@ -355,10 +306,11 @@ namespace
         const double cosine_r = std::cos(chart_point(1)) * chart_point(0);
         const double sine_r   = std::sin(chart_point(1)) * chart_point(0);
 
-        const double z_factor = skeleton_length + cosine_r * cotangent_polar -
-                                std::abs(sine_r) * cosecant_polar *
-                                  ((sine_r > 0) ? cotangent_azimuth_half_right :
-                                                  cotangent_azimuth_half_left);
+        const double z_factor =
+          skeleton_length + cosine_r * cotangent_polar -
+          std::abs(sine_r) * cosecant_polar *
+            ((sine_r > 0) ? cotangent_azimuth_half_right :
+                            cotangent_azimuth_half_left);
         lambda *= z_factor;
       }
 
@@ -369,9 +321,9 @@ namespace
       // Rotate the orthogonal direction by the given angle
       const double sine_r   = std::sin(chart_point(1)) * chart_point(0);
       const double cosine_r = std::cos(chart_point(1)) * chart_point(0);
-      const Tensor<1, spacedim> dxn =
+      const vector<spacedim> dxn =
         cross_product_3d(direction, normal_direction);
-      const Tensor<1, spacedim> intermediate =
+      const vector<spacedim> intermediate =
         normal_direction * cosine_r + dxn * sine_r;
 
       // Finally, put everything together.
@@ -382,108 +334,208 @@ namespace
 
 
 
+/**
+ * Initialize the given triangulation with a pipe junction, which is the
+ * intersection of three truncated cones.
+ *
+ * The geometry has four characteristic cross sections, located at the three
+ * openings and the bifurcation. They need to be specified via the function's
+ * arguments: each cross section is described by a characteristic point and a
+ * radius. The cross sections at the openings are circles and are described by
+ * their center point and radius. The bifurcation point describes where the
+ * symmetry axes of all cones meet.
+ *
+ * Each truncated cone is transformed so that the three merge seamlessly into
+ * each other. The bifurcation radius describes the radius that each original,
+ * untransformed, truncated cone would have at the bifurcation. This radius is
+ * necessary for the construction of the geometry and can, in general, no longer
+ * be found in the final result.
+ *
+ * Each cone will be assigned a distinct <em>material ID</em> that matches the
+ * index of their opening in the argument @p openings. For example, the cone
+ * which connects to opening with index 0 in @p openings will have material ID 0.
+ *
+ * Similarly, <em>boundary IDs</em> are assigned to the cross-sections of each
+ * opening to match their index. All other boundary faces will be assigned
+ * boundary ID 3.
+ *
+ * <em>Manifold IDs</em> will be set on the mantles of each truncated cone in
+ * the same way. Each cone will have a Manifold ??? assigned.
+ *
+ * @pre The triangulation passed as argument needs to be empty when calling this
+ * function.
+ *
+ * @note Only implemented for `dim = 3` and `spacedim = 3`.
+ *
+ * @param tria An empty triangulation which will hold the pipe junction geometry.
+ * @param openings Center point and radius of each opening.
+ * @param bifurcation Center point of the bifurcation and hypothetical radius of
+ *                    each truncated cone at the bifurcation.
+ */
 void
-tee(Triangulation<3, 3>                              &tria,
-    const std::array<std::pair<Point<3>, double>, 3> &openings,
-    const std::pair<Point<3>, double>                &bifurcation)
+pipe_junction(Triangulation<3, 3>                              &tria,
+              const std::array<std::pair<Point<3>, double>, 3> &openings,
+              const std::pair<Point<3>, double>                &bifurcation)
 {
   constexpr unsigned int dim      = 3;
   constexpr unsigned int spacedim = 3;
-  using vector                    = Tensor<1, spacedim, double>;
 
   constexpr unsigned int n_pipes   = 3;
   constexpr double       tolerance = 1.e-12;
 
+  // TODO: MSVC can't capture const or constexpr values in lambda functions
+  // (due to either a missing implementation or a bug). Instead, we need to
+  // duplicate the declaration in all lambda functions below.
+  //   See also: https://developercommunity.visualstudio.com/t/
+  //             invalid-template-argument-expected-compile-time-co/187862
+
+#ifdef DEBUG
+  // Verify user input.
+  Assert(bifurcation.second > 0, ExcMessage("Invalid input: negative radius."));
+  for (const auto &opening : openings)
+    Assert(opening.second > 0, ExcMessage("Invalid input: negative radius."));
+#endif
+
   // Each pipe segment will be identified by the index of its opening in the
   // parameter array. To determine the next and previous entry in the array for
   // a given index, we create auxiliary functions.
-  const auto cyclic = [n_pipes](const unsigned int i) -> unsigned int {
+  const auto cyclic = [](const unsigned int i) -> unsigned int {
+    constexpr unsigned int n_pipes = 3;
     return (i < (n_pipes - 1)) ? i + 1 : 0;
   };
-  const auto anticyclic = [n_pipes](const unsigned int i) -> unsigned int {
+  const auto anticyclic = [](const unsigned int i) -> unsigned int {
+    constexpr unsigned int n_pipes = 3;
     return (i > 0) ? i - 1 : n_pipes - 1;
   };
 
   // Cartesian base represented by unit vectors.
-  constexpr std::array<vector, spacedim> directions = {
-    {vector({1., 0., 0.}), vector({0., 1., 0.}), vector({0., 0., 1.})}};
+  constexpr std::array<vector<spacedim>, spacedim> directions = {
+    {vector<spacedim>({1., 0., 0.}),
+     vector<spacedim>({0., 1., 0.}),
+     vector<spacedim>({0., 0., 1.})}};
 
-  // The skeleton corresponds to the axis of symmetry in the center of each
-  // pipe segment. Each skeleton vector points from the associated opening to
-  // the common bifurcation point. For convenience, we also compute length and
-  // unit vector of every skeleton vector here.
-  const auto skeleton = [&]() {
-    std::array<vector, n_pipes> skeleton;
-    for (unsigned int p = 0; p < n_pipes; ++p)
-      skeleton[p] = bifurcation.first - openings[p].first;
-    return skeleton;
-  }();
+  //
+  // Part I: Prepare measures and angles for each pipe segment.
+  //
+  std::array<PipeSegment::Parameters<spacedim>, n_pipes> pipe_parameters;
+  for (unsigned int p = 0; p < n_pipes; ++p)
+    {
+      auto &pipe = pipe_parameters[p];
 
-  const auto skeleton_length = [&]() {
-    std::array<double, n_pipes> skeleton_length;
-    for (unsigned int p = 0; p < n_pipes; ++p)
-      skeleton_length[p] = skeleton[p].norm();
-    return skeleton_length;
-  }();
+      pipe.opening           = openings[p].first;
+      pipe.radius_at_opening = openings[p].second;
 
-#ifdef DEBUG
-  // In many assertions that come up below, we will verify the integrity of the
-  // geometry. For this, we introduce a tolerance length which vectors must
-  // exceed to avoid being considered "too short". We relate this length to the
-  // longest pipe segment.
+      pipe.bifurcation           = bifurcation.first;
+      pipe.radius_at_bifurcation = bifurcation.second;
+
+      // The skeleton corresponds to the axis of symmetry in the center of
+      // each pipe segment. Each skeleton vector points from the associated
+      // opening to the common bifurcation point. For convenience, we also
+      // compute length and unit vector of every skeleton vector here.
+      pipe.skeleton        = pipe.bifurcation - pipe.opening;
+      pipe.skeleton_length = pipe.skeleton.norm();
+    }
+
+  // In many assertions that come up below, we will verify the integrity of
+  // the geometry. For this, we introduce a tolerance length which vectors
+  // must exceed to avoid being considered "too short". We relate this length
+  // to the longest pipe segment.
   const double tolerance_length =
     tolerance *
-    *std::max_element(skeleton_length.begin(), skeleton_length.end());
-#endif
+    std::max_element(pipe_parameters.begin(),
+                     pipe_parameters.end(),
+                     [](const auto &prm1, const auto &prm2) -> bool {
+                       return prm1.skeleton_length < prm2.skeleton_length;
+                     })
+      ->skeleton_length;
 
-  for (unsigned int p = 0; p < n_pipes; ++p)
-    Assert(skeleton_length[p] > tolerance_length,
-           ExcMessage("Invalid input: bifurcation matches opening."));
+  // Continue with calculating the unit vector of skeleton.
+  {
+    for (auto &pipe : pipe_parameters)
+      {
+        Assert(pipe.skeleton_length > tolerance_length,
+               ExcMessage("Invalid input: bifurcation matches opening."));
 
-  const auto skeleton_unit = [&]() {
-    std::array<vector, n_pipes> skeleton_unit;
-    for (unsigned int p = 0; p < n_pipes; ++p)
-      skeleton_unit[p] = skeleton[p] / skeleton_length[p];
-    return skeleton_unit;
-  }();
+        pipe.skeleton_unit = pipe.skeleton / pipe.skeleton_length;
+      }
 
-  // To determine the orientation of the pipe segments to each other, we will
-  // construct a plane: starting from the bifurcation point, we will move by the
-  // magnitude one in each of the skeleton directions and span a plane with the
-  // three points we reached.
-  //
-  // The normal vector of this particular plane then describes the edge at which
-  // all pipe segments meet. If we would interpret the bifurcation as a ball
-  // joint, the normal vector would correspond to the polar axis of the ball.
-  const auto normal = [&]() {
-    std::array<Point<spacedim>, n_pipes> points;
-    for (unsigned int p = 0; p < n_pipes; ++p)
-      points[p] = bifurcation.first - skeleton_unit[p];
-
-    const auto normal =
-      cross_product_3d(points[1] - points[0], points[2] - points[0]);
+    // To determine the orientation of the pipe segments to each other, we will
+    // construct a plane: starting from the bifurcation point, we will move by
+    // the magnitude one in each of the skeleton directions and span a plane
+    // with the three points we reached.
+    //
+    // The normal vector of this particular plane then describes the edge at
+    // which all pipe segments meet. If we would interpret the bifurcation as a
+    // ball joint, the normal vector would correspond to the polar axis of the
+    // ball.
+    auto normal = cross_product_3d(pipe_parameters[0].skeleton_unit -
+                                     pipe_parameters[1].skeleton_unit,
+                                   pipe_parameters[0].skeleton_unit -
+                                     pipe_parameters[2].skeleton_unit);
     Assert(normal.norm() > tolerance_length,
            ExcMessage("Invalid input: all three openings "
                       "are located on one line."));
+    normal /= normal.norm();
 
-    return normal / normal.norm();
-  }();
+    for (auto &pipe : pipe_parameters)
+      {
+        pipe.bifurcation_edge = normal;
 
-  // Projections of all skeleton vectors perpendicular to the normal vector, or
-  // in other words, onto the plane described above.
-  const auto skeleton_plane = [&]() {
-    std::array<vector, n_pipes> skeleton_plane;
+        pipe.skeleton_on_plane =
+          pipe.skeleton - (pipe.skeleton * normal) * normal;
+        Assert(std::abs(pipe.skeleton_on_plane * normal) < tolerance_length,
+               ExcInternalError());
+
+        pipe.bifurcation_edge_on_opening =
+          normal - (normal * pipe.skeleton_unit) * pipe.skeleton_unit;
+        Assert(std::abs(pipe.bifurcation_edge_on_opening * pipe.skeleton_unit) <
+                 tolerance,
+               ExcInternalError());
+      }
+
+
     for (unsigned int p = 0; p < n_pipes; ++p)
       {
-        skeleton_plane[p] = skeleton[p] - (skeleton[p] * normal) * normal;
-        Assert(std::abs(skeleton_plane[p] * normal) <
-                 tolerance * skeleton_plane[p].norm(),
-               ExcInternalError());
-        Assert(skeleton_plane[p].norm() > tolerance_length,
+        auto &pipe = pipe_parameters[p];
+
+        // In spherical coordinates, the polar angle describes the kink of the
+        // skeleton vector with respect to the polar axis. If all openings and
+        // the bifurcation are located on a plane, then this angle is pi/2 for
+        // every pipe segment.
+        pipe.polar_angle =
+          Physics::VectorRelations::angle(pipe.skeleton, normal);
+        Assert(std::abs(pipe.polar_angle) > tolerance &&
+                 std::abs(pipe.polar_angle - numbers::PI) > tolerance,
                ExcMessage("Invalid input."));
+        pipe.cosecant_polar  = 1. / std::sin(pipe.polar_angle);
+        pipe.cotangent_polar = std::cos(pipe.polar_angle) * pipe.cosecant_polar;
+
+        // Further, we compute the angles between this pipe segment to the other
+        // two. The angle corresponds to the azimuthal direction if we stick to
+        // the picture of the ball joint.
+        pipe.azimuth_angle_right = Physics::VectorRelations::signed_angle(
+          pipe_parameters[p].skeleton_on_plane,
+          pipe_parameters[cyclic(p)].skeleton_on_plane,
+          /*axis=*/normal);
+        Assert(std::abs(pipe.azimuth_angle_right) > tolerance,
+               ExcMessage("Invalid input: at least two openings located "
+                          "in same direction from bifurcation"));
+        pipe.cotangent_azimuth_half_right =
+          std::cos(.5 * pipe.azimuth_angle_right) /
+          std::sin(.5 * pipe.azimuth_angle_right);
+
+        pipe.azimuth_angle_left = Physics::VectorRelations::signed_angle(
+          pipe_parameters[p].skeleton_on_plane,
+          pipe_parameters[anticyclic(p)].skeleton_on_plane,
+          /*axis=*/-normal);
+        Assert(std::abs(pipe.azimuth_angle_left) > tolerance,
+               ExcMessage("Invalid input: at least two openings located "
+                          "in same direction from bifurcation"));
+        pipe.cotangent_azimuth_half_left =
+          std::cos(.5 * pipe.azimuth_angle_left) /
+          std::sin(.5 * pipe.azimuth_angle_left);
       }
-    return skeleton_plane;
-  }();
+  }
 
   // Create a hyperball domain in 2D that will act as the reference cross
   // section for each pipe segment.
@@ -495,7 +547,8 @@ tee(Triangulation<3, 3>                              &tria,
     return tria_base;
   }();
 
-  // Now move on to actually build the tee geometry!
+  //
+  // Part II: Build pipe junction geometry.
   //
   // For each pipe segment, we create a separate triangulation object which will
   // be merged with the parameter triangulation in the end.
@@ -504,6 +557,7 @@ tee(Triangulation<3, 3>                              &tria,
   std::vector<PipeSegment::Manifold<dim, spacedim>> manifolds;
   for (unsigned int p = 0; p < n_pipes; ++p)
     {
+      const auto                  &prm = pipe_parameters[p];
       Triangulation<dim, spacedim> pipe;
 
       //
@@ -513,7 +567,7 @@ tee(Triangulation<3, 3>                              &tria,
       // The number of layers depends on the ratio of the length of the skeleton
       // and the minimal radius in the pipe segment.
       const unsigned int n_slices =
-        1 + std::ceil(skeleton_length[p] /
+        1 + std::ceil(prm.skeleton_length /
                       std::min(openings[p].second, bifurcation.second));
       // const unsigned int n_slices = 2; // DEBUG
       GridGenerator::extrude_triangulation(tria_base,
@@ -545,6 +599,7 @@ tee(Triangulation<3, 3>                              &tria,
                 else
                   {
                     // cone mantle
+                    cell->set_all_manifold_ids(n_pipes);
                     face->set_all_manifold_ids(p);
                   }
               }
@@ -575,42 +630,6 @@ tee(Triangulation<3, 3>                              &tria,
       // relations between the skeleton vectors viewed from the bifurcation
       // point. For this purpose, we interpret the bifurcation as a ball joint
       // as described above.
-      //
-      // In spherical coordinates, the polar angle describes the kink of the
-      // skeleton vector with respect to the polar axis. If all openings and the
-      // bifurcation are located on a plane, then this angle is pi/2 for every
-      // pipe segment.
-      const double polar_angle =
-        Physics::VectorRelations::angle(skeleton[p], normal);
-      Assert(std::abs(polar_angle) > tolerance &&
-               std::abs(polar_angle - numbers::PI) > tolerance,
-             ExcMessage("Invalid input."));
-      const double cosecant_polar  = 1. / std::sin(polar_angle);
-      const double cotangent_polar = std::cos(polar_angle) * cosecant_polar;
-
-      // Further, we compute the angles between this pipe segment to the other
-      // two. The angle corresponds to the azimuthal direction if we stick to
-      // the picture of the ball joint.
-      const double azimuth_angle_right =
-        Physics::VectorRelations::signed_angle(skeleton_plane[p],
-                                               skeleton_plane[cyclic(p)],
-                                               /*axis=*/normal);
-      Assert(std::abs(azimuth_angle_right) > tolerance,
-             ExcMessage("Invalid input: at least two openings located "
-                        "in same direction from bifurcation"));
-      const double cotangent_azimuth_half_right =
-        std::cos(.5 * azimuth_angle_right) / std::sin(.5 * azimuth_angle_right);
-
-      const double azimuth_angle_left =
-        Physics::VectorRelations::signed_angle(skeleton_plane[p],
-                                               skeleton_plane[anticyclic(p)],
-                                               /*axis=*/-normal);
-      Assert(std::abs(azimuth_angle_left) > tolerance,
-             ExcMessage("Invalid input: at least two openings located "
-                        "in same direction from bifurcation"));
-      const double cotangent_azimuth_half_left =
-        std::cos(.5 * azimuth_angle_left) / std::sin(.5 * azimuth_angle_left);
-
       const auto pipe_segment = [&](const Point<spacedim> &pt) {
         // We transform the cylinder in x- and y-direction to become a truncated
         // cone, similarly to GridGenerator::truncated_cone().
@@ -624,14 +643,14 @@ tee(Triangulation<3, 3>                              &tria,
         // bifurcation, we also need to transform in z-direction.
         const double z_factor =
           // Scale the unit cylinder to the correct length.
-          skeleton_length[p]
+          prm.skeleton_length
           // Next, adjust for the polar angle. This part will be zero if all
           // openings and the bifurcation are located on a plane.
-          + x_new * cotangent_polar
+          + x_new * prm.cotangent_polar
           // Last, adjust for the azimuth angle.
-          - std::abs(y_new) * cosecant_polar *
-              ((y_new > 0) ? cotangent_azimuth_half_right :
-                             cotangent_azimuth_half_left);
+          - std::abs(y_new) * prm.cosecant_polar *
+              ((y_new > 0) ? prm.cotangent_azimuth_half_right :
+                             prm.cotangent_azimuth_half_left);
         Assert(z_factor > 0,
                ExcMessage("Invalid input: at least one pipe segment "
                           "is not long enough in this configuration"));
@@ -650,17 +669,21 @@ tee(Triangulation<3, 3>                              &tria,
       // rotate the pipe segment around the axis that is described by the cross
       // product of both vectors.
       const auto rotation_angle =
-        Physics::VectorRelations::angle(directions[2], skeleton_unit[p]);
+        Physics::VectorRelations::angle(directions[2], prm.skeleton_unit);
       const auto rotation_axis = [&]() {
         const auto rotation_axis =
-          cross_product_3d(directions[2], skeleton_unit[p]);
+          cross_product_3d(directions[2], prm.skeleton_unit);
         const auto norm = rotation_axis.norm();
         if (norm < tolerance)
           return directions[1];
         else
           return rotation_axis / norm;
       }();
-      GridTools::rotate(rotation_axis, rotation_angle, pipe);
+      const auto rotation_matrix =
+        Physics::Transformations::Rotations::rotation_matrix_3d(rotation_axis,
+                                                                rotation_angle);
+      GridTools::transform(
+        [&](const Point<spacedim> &pt) { return rotation_matrix * pt; }, pipe);
 
       //
       // Step 4: rotate laterally to align pipe segments
@@ -674,33 +697,18 @@ tee(Triangulation<3, 3>                              &tria,
       // With the latest rotation however, this is no longer the case. We rotate
       // the unit vector in x-direction in the same fashion, which gives us the
       // current direction of the projected edge.
-      const auto rotation_matrix =
-        Physics::Transformations::Rotations::rotation_matrix_3d(rotation_axis,
-                                                                rotation_angle);
       const auto Rx = rotation_matrix * directions[0];
 
-      // To determine how far we need to rotate, we also need to project the
-      // polar axis of the bifurcation ball joint into the same plane.
-      const auto projected_normal =
-        normal - (normal * skeleton_unit[p]) * skeleton_unit[p];
-
-      // Both the projected normal and Rx must be in the opening plane.
-      Assert(std::abs(skeleton_unit[p] * projected_normal) < tolerance,
-             ExcInternalError());
-      Assert(std::abs(skeleton_unit[p] * Rx) < tolerance, ExcInternalError());
+      // Rx must be in the opening plane.
+      Assert(std::abs(prm.skeleton_unit * Rx) < tolerance, ExcInternalError());
 
       // Now we laterally rotate the pipe segment around its own symmetry axis
       // that the edge matches the polar axis.
       const double lateral_angle =
         Physics::VectorRelations::signed_angle(Rx,
-                                               projected_normal,
-                                               /*axis=*/skeleton_unit[p]);
-      GridTools::rotate(skeleton_unit[p], lateral_angle, pipe);
-
-      const auto lateral_rotation_matrix =
-        Physics::Transformations::Rotations::rotation_matrix_3d(
-          skeleton_unit[p], lateral_angle);
-      const auto LRx = lateral_rotation_matrix * Rx;
+                                               prm.bifurcation_edge_on_opening,
+                                               /*axis=*/prm.skeleton_unit);
+      GridTools::rotate(prm.skeleton_unit, lateral_angle, pipe);
 
       //
       // Step 5: shift to final position
@@ -708,15 +716,18 @@ tee(Triangulation<3, 3>                              &tria,
       GridTools::shift(openings[p].first, pipe);
 
       // set manifold/boundary ids. either here or after extrude_triangulation
-      std::cout << "lateral angle " << lateral_angle << std::endl;
-      manifolds.emplace_back(skeleton_unit[p],
+      manifolds.emplace_back(prm.skeleton_unit,
                              openings[p].first,
-                             LRx,
-                             skeleton_length[p],
-                             polar_angle,
-                             azimuth_angle_left,
-                             azimuth_angle_right,
+                             prm.bifurcation_edge_on_opening /
+                               prm.bifurcation_edge_on_opening.norm(),
+                             prm.skeleton_length,
+                             prm.polar_angle,
+                             prm.azimuth_angle_left,
+                             prm.azimuth_angle_right,
                              tolerance);
+
+      //manifolds.emplace_back(prm,
+      //                       tolerance);
 
 #if false
       std::ofstream out("pipe-" + std::to_string(p) + ".vtk");
@@ -744,6 +755,11 @@ tee(Triangulation<3, 3>                              &tria,
 
   for (unsigned int p = 0; p < n_pipes; ++p)
     tria.set_manifold(p, manifolds[p]);
+
+//  static TransfiniteInterpolationManifold<dim, spacedim> transfinite;
+//  transfinite.initialize(tria);
+//  tria.set_manifold(n_pipes, transfinite);
+  // add mapping cache???
 }
 
 
@@ -783,7 +799,7 @@ refine_and_write(Triangulation<dim, spacedim> &tria,
 
 
 /**
- * Tests a selection of common configurations of tee geometries.
+ * Tests a selection of common configurations of pipe junction geometries.
  */
 void
 test_selection()
@@ -801,7 +817,7 @@ test_selection()
     const std::pair<Point<spacedim>, double> bifurcation = {{0., 0., 0.}, 1.};
 
     Triangulation<dim, spacedim> tria;
-    tee(tria, openings, bifurcation);
+    pipe_junction(tria, openings, bifurcation);
 
     refine_and_write(tria, 2, "ypipe");
   }
@@ -814,7 +830,7 @@ test_selection()
     const std::pair<Point<spacedim>, double> bifurcation = {{0., 0., 0.}, 1.};
 
     Triangulation<dim, spacedim> tria;
-    tee(tria, openings, bifurcation);
+    pipe_junction(tria, openings, bifurcation);
 
     refine_and_write(tria, 2, "tpipe");
   }
@@ -827,7 +843,7 @@ test_selection()
     const std::pair<Point<spacedim>, double> bifurcation = {{0., 0., 0.}, 1.};
 
     Triangulation<dim, spacedim> tria;
-    tee(tria, openings, bifurcation);
+    pipe_junction(tria, openings, bifurcation);
 
     refine_and_write(tria, 2, "corner");
   }
@@ -840,7 +856,7 @@ test_selection()
     const std::pair<Point<spacedim>, double> bifurcation = {{0., 0., 0.}, 1.};
 
     Triangulation<dim, spacedim> tria;
-    tee(tria, openings, bifurcation);
+    pipe_junction(tria, openings, bifurcation);
 
     refine_and_write(tria, 2, "irregular");
   }
@@ -954,7 +970,7 @@ test_permutations()
       try
         {
           Triangulation<dim, spacedim> tria;
-          tee(tria, openings, bifurcation);
+          pipe_junction(tria, openings, bifurcation);
           tria.refine_global();
           GridTools::volume(tria);
         }
