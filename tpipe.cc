@@ -413,6 +413,8 @@ pipe_junction(Triangulation<3, 3>                            &tria,
   // Create a hyperball domain in 2D that will act as the reference cross
   // section for each pipe segment.
   const auto tria_base = []() {
+    constexpr unsigned int               dim      = 3;
+    constexpr unsigned int               spacedim = 3;
     Triangulation<dim - 1, spacedim - 1> tria_base;
     GridGenerator::hyper_ball_balanced(tria_base,
                                        /*center=*/Point<spacedim - 1>(),
@@ -439,8 +441,9 @@ pipe_junction(Triangulation<3, 3>                            &tria,
       // The number of layers depends on the ratio of the length of the skeleton
       // and the minimal radius in the pipe segment.
       const unsigned int n_slices =
-        1 + std::ceil(skeleton_length[p] /
-                      std::min(openings[p].second, bifurcation.second));
+        1 + static_cast<unsigned int>(
+              std::ceil(skeleton_length[p] /
+                        std::min(openings[p].second, bifurcation.second)));
       // const unsigned int n_slices = 2; // DEBUG
       GridGenerator::extrude_triangulation(tria_base,
                                            n_slices,
@@ -565,6 +568,7 @@ pipe_junction(Triangulation<3, 3>                            &tria,
                           "is not long enough in this configuration"));
         const double z_new = z_factor * pt[2];
 
+        constexpr unsigned int spacedim = 3;
         return Point<spacedim>(x_new, y_new, z_new);
       };
       GridTools::transform(pipe_segment, pipe);
