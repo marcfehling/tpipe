@@ -384,13 +384,8 @@ pipe_junction(Triangulation<3, 3>                            &tria,
   // all pipe segments meet. If we would interpret the bifurcation as a ball
   // joint, the normal vector would correspond to the polar axis of the ball.
   const auto normal = [&]() {
-    constexpr unsigned int               n_pipes = 3;
-    std::array<Point<spacedim>, n_pipes> points;
-    for (unsigned int p = 0; p < n_pipes; ++p)
-      points[p] = bifurcation.first - skeleton_unit[p];
-
-    const auto normal =
-      cross_product_3d(points[1] - points[0], points[2] - points[0]);
+    const auto normal = cross_product_3d(skeleton_unit[1] - skeleton_unit[0],
+                                         skeleton_unit[2] - skeleton_unit[0]);
     Assert(normal.norm() > tolerance_length,
            ExcMessage("Invalid input: all three openings "
                       "are located on one line."));
