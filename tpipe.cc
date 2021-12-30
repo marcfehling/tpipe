@@ -291,11 +291,14 @@ namespace
  * @param openings Center point and radius of each opening.
  * @param bifurcation Center point of the bifurcation and hypothetical radius of
  *                    each truncated cone at the bifurcation.
+ * @param aspect_ratio Aspect ratio of cells, specified as radial over z-extension.
+ *                     Default ratio is $\Delta r/\Delta z = 0.5$.
  */
 void
 pipe_junction(Triangulation<3, 3>                            &tria,
               const std::vector<std::pair<Point<3>, double>> &openings,
-              const std::pair<Point<3>, double>              &bifurcation)
+              const std::pair<Point<3>, double>              &bifurcation,
+              const double aspect_ratio = 0.5)
 {
   constexpr unsigned int dim      = 3;
   constexpr unsigned int spacedim = 3;
@@ -409,11 +412,14 @@ pipe_junction(Triangulation<3, 3>                            &tria,
       //
       // We create a unit cylinder by extrusion from the base cross section.
       // The number of layers depends on the ratio of the length of the skeleton
-      // and the minimal radius in the pipe segment.
+      // and half the minimal radius in the pipe segment. The latter corresponds
+      // to the length in radial direction of the smallest cell in the base
+      // cross section. Further, the aspect ratio of the extruded cells can be
+      // set individually with a function parameter.
       const unsigned int n_slices =
-        1 + static_cast<unsigned int>(
-              std::ceil(skeleton_length[p] /
-                        std::min(openings[p].second, bifurcation.second)));
+        1 + static_cast<unsigned int>(std::ceil(
+              aspect_ratio * skeleton_length[p] /
+              (0.5 * std::min(openings[p].second, bifurcation.second))));
       // const unsigned int n_slices = 2; // DEBUG
       GridGenerator::extrude_triangulation(tria_base,
                                            n_slices,
@@ -511,8 +517,8 @@ pipe_junction(Triangulation<3, 3>                            &tria,
       data.skeleton_length = skeleton_length[p];
       data.cosecant_polar  = 1. / std::sin(polar_angle);
       data.cotangent_polar = std::cos(polar_angle) * data.cosecant_polar;
-      data.cotangent_azimuth_half_right = std::cos(.5 * azimuth_angle_right) /
-                                          std::sin(.5 * azimuth_angle_right);
+      data.cotangent_azimuth_half_right =
+        std::cos(.5 * azimuth_angle_right) / std::sin(.5 * azimuth_angle_right);
       data.cotangent_azimuth_half_left =
         std::cos(.5 * azimuth_angle_left) / std::sin(.5 * azimuth_angle_left);
 
