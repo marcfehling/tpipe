@@ -304,12 +304,6 @@ pipe_junction(Triangulation<3, 3>                            &tria,
   constexpr unsigned int n_pipes   = 3;
   constexpr double       tolerance = 1.e-12;
 
-  // TODO: MSVC can't capture const or constexpr values in lambda functions
-  // (due to either a missing implementation or a bug). Instead, we need to
-  // duplicate the declaration in all lambda functions below.
-  //   See also: https://developercommunity.visualstudio.com/t/
-  //             invalid-template-argument-expected-compile-time-co/187862
-
 #ifdef DEBUG
   // Verify user input.
   Assert(bifurcation.second > 0, ExcMessage("Invalid input: negative radius."));
@@ -339,21 +333,13 @@ pipe_junction(Triangulation<3, 3>                            &tria,
   // pipe segment. Each skeleton vector points from the associated opening to
   // the common bifurcation point. For convenience, we also compute length and
   // unit vector of every skeleton vector here.
-  const auto skeleton = [&]() {
-    constexpr unsigned int      n_pipes = 3;
-    std::array<vector, n_pipes> skeleton;
-    for (unsigned int p = 0; p < n_pipes; ++p)
-      skeleton[p] = bifurcation.first - openings[p].first;
-    return skeleton;
-  }();
+  std::array<vector, n_pipes> skeleton;
+  for (unsigned int p = 0; p < n_pipes; ++p)
+    skeleton[p] = bifurcation.first - openings[p].first;
 
-  const auto skeleton_length = [&]() {
-    constexpr unsigned int      n_pipes = 3;
-    std::array<double, n_pipes> skeleton_length;
-    for (unsigned int p = 0; p < n_pipes; ++p)
-      skeleton_length[p] = skeleton[p].norm();
-    return skeleton_length;
-  }();
+  std::array<double, n_pipes> skeleton_length;
+  for (unsigned int p = 0; p < n_pipes; ++p)
+    skeleton_length[p] = skeleton[p].norm();
 
   // In many assertions that come up below, we will verify the integrity of the
   // geometry. For this, we introduce a tolerance length which vectors must
@@ -363,17 +349,13 @@ pipe_junction(Triangulation<3, 3>                            &tria,
     tolerance *
     *std::max_element(skeleton_length.begin(), skeleton_length.end());
 
+  std::array<vector, n_pipes> skeleton_unit;
   for (unsigned int p = 0; p < n_pipes; ++p)
-    Assert(skeleton_length[p] > tolerance_length,
-           ExcMessage("Invalid input: bifurcation matches opening."));
-
-  const auto skeleton_unit = [&]() {
-    constexpr unsigned int      n_pipes = 3;
-    std::array<vector, n_pipes> skeleton_unit;
-    for (unsigned int p = 0; p < n_pipes; ++p)
+    {
+      Assert(skeleton_length[p] > tolerance_length,
+             ExcMessage("Invalid input: bifurcation matches opening."));
       skeleton_unit[p] = skeleton[p] / skeleton_length[p];
-    return skeleton_unit;
-  }();
+    }
 
   // To determine the orientation of the pipe segments to each other, we will
   // construct a plane: starting from the bifurcation point, we will move by the
@@ -383,44 +365,32 @@ pipe_junction(Triangulation<3, 3>                            &tria,
   // The normal vector of this particular plane then describes the edge at which
   // all pipe segments meet. If we would interpret the bifurcation as a ball
   // joint, the normal vector would correspond to the polar axis of the ball.
-  const auto normal = [&]() {
-    const auto normal = cross_product_3d(skeleton_unit[1] - skeleton_unit[0],
-                                         skeleton_unit[2] - skeleton_unit[0]);
-    Assert(normal.norm() > tolerance_length,
-           ExcMessage("Invalid input: all three openings "
-                      "are located on one line."));
-
-    return normal / normal.norm();
-  }();
+  vector normal = cross_product_3d(skeleton_unit[1] - skeleton_unit[0],
+                                   skeleton_unit[2] - skeleton_unit[0]);
+  Assert(normal.norm() > tolerance_length,
+         ExcMessage("Invalid input: all three openings "
+                    "are located on one line."));
+  normal /= normal.norm();
 
   // Projections of all skeleton vectors perpendicular to the normal vector, or
   // in other words, onto the plane described above.
-  const auto skeleton_plane = [&]() {
-    constexpr unsigned int      n_pipes = 3;
-    std::array<vector, n_pipes> skeleton_plane;
-    for (unsigned int p = 0; p < n_pipes; ++p)
-      {
-        skeleton_plane[p] = skeleton[p] - (skeleton[p] * normal) * normal;
-        Assert(std::abs(skeleton_plane[p] * normal) <
-                 tolerance * skeleton_plane[p].norm(),
-               ExcInternalError());
-        Assert(skeleton_plane[p].norm() > tolerance_length,
-               ExcMessage("Invalid input."));
-      }
-    return skeleton_plane;
-  }();
+  std::array<vector, n_pipes> skeleton_plane;
+  for (unsigned int p = 0; p < n_pipes; ++p)
+    {
+      skeleton_plane[p] = skeleton[p] - (skeleton[p] * normal) * normal;
+      Assert(std::abs(skeleton_plane[p] * normal) <
+               tolerance * skeleton_plane[p].norm(),
+             ExcInternalError());
+      Assert(skeleton_plane[p].norm() > tolerance_length,
+             ExcMessage("Invalid input."));
+    }
 
   // Create a hyperball domain in 2D that will act as the reference cross
   // section for each pipe segment.
-  const auto tria_base = []() {
-    constexpr unsigned int               dim      = 3;
-    constexpr unsigned int               spacedim = 3;
-    Triangulation<dim - 1, spacedim - 1> tria_base;
-    GridGenerator::hyper_ball_balanced(tria_base,
-                                       /*center=*/Point<spacedim - 1>(),
-                                       /*radius=*/1.);
-    return tria_base;
-  }();
+  Triangulation<dim - 1, spacedim - 1> tria_base;
+  GridGenerator::hyper_ball_balanced(tria_base,
+                                     /*center=*/Point<spacedim - 1>(),
+                                     /*radius=*/1.);
 
   // Now move on to actually build the pipe junction geometry!
   //
@@ -537,17 +507,14 @@ pipe_junction(Triangulation<3, 3>                            &tria,
 
       // We compute some trigonometric relations with these angles, and store
       // them conveniently in a struct to be reused later.
-      const auto data = [&]() {
-        PipeSegment::AdditionalData data;
-        data.skeleton_length = skeleton_length[p];
-        data.cosecant_polar  = 1. / std::sin(polar_angle);
-        data.cotangent_polar = std::cos(polar_angle) * data.cosecant_polar;
-        data.cotangent_azimuth_half_right = std::cos(.5 * azimuth_angle_right) /
-                                            std::sin(.5 * azimuth_angle_right);
-        data.cotangent_azimuth_half_left =
-          std::cos(.5 * azimuth_angle_left) / std::sin(.5 * azimuth_angle_left);
-        return data;
-      }();
+      PipeSegment::AdditionalData data;
+      data.skeleton_length = skeleton_length[p];
+      data.cosecant_polar  = 1. / std::sin(polar_angle);
+      data.cotangent_polar = std::cos(polar_angle) * data.cosecant_polar;
+      data.cotangent_azimuth_half_right = std::cos(.5 * azimuth_angle_right) /
+                                          std::sin(.5 * azimuth_angle_right);
+      data.cotangent_azimuth_half_left =
+        std::cos(.5 * azimuth_angle_left) / std::sin(.5 * azimuth_angle_left);
 
       // Now transform the cylinder as described above.
       const auto pipe_segment = [&](const Point<spacedim> &pt) {
@@ -568,6 +535,11 @@ pipe_junction(Triangulation<3, 3>                            &tria,
                           "is not long enough in this configuration"));
         const double z_new = z_factor * pt[2];
 
+        // TODO: MSVC can't capture const or constexpr values in lambda
+        // functions (due to either a missing implementation or a bug).
+        // Instead, we duplicate the declaration here.
+        //   See also: https://developercommunity.visualstudio.com/t/
+        //             invalid-template-argument-expected-compile-time-co/187862
         constexpr unsigned int spacedim = 3;
         return Point<spacedim>(x_new, y_new, z_new);
       };
@@ -581,18 +553,18 @@ pipe_junction(Triangulation<3, 3>                            &tria,
       // matches the direction of the skeleton vector. For this purpose, we
       // rotate the pipe segment around the axis that is described by the cross
       // product of both vectors.
-      const auto rotation_angle =
+      const double rotation_angle =
         Physics::VectorRelations::angle(directions[2], skeleton_unit[p]);
-      const auto rotation_axis = [&]() {
-        const auto rotation_axis =
+      const vector rotation_axis = [&]() {
+        const vector rotation_axis =
           cross_product_3d(directions[2], skeleton_unit[p]);
-        const auto norm = rotation_axis.norm();
+        const double norm = rotation_axis.norm();
         if (norm < tolerance)
           return directions[1];
         else
           return rotation_axis / norm;
       }();
-      const auto rotation_matrix =
+      const Tensor<2, spacedim, double> rotation_matrix =
         Physics::Transformations::Rotations::rotation_matrix_3d(rotation_axis,
                                                                 rotation_angle);
       GridTools::transform(
@@ -610,11 +582,11 @@ pipe_junction(Triangulation<3, 3>                            &tria,
       // With the latest rotation however, this is no longer the case. We rotate
       // the unit vector in x-direction in the same fashion, which gives us the
       // current direction of the projected edge.
-      const auto Rx = rotation_matrix * directions[0];
+      const vector Rx = rotation_matrix * directions[0];
 
       // To determine how far we need to rotate, we also need to project the
       // polar axis of the bifurcation ball joint into the same plane.
-      const auto normal_projected_on_opening =
+      const vector normal_projected_on_opening =
         normal - (normal * skeleton_unit[p]) * skeleton_unit[p];
 
       // Both the projected normal and Rx must be in the opening plane.
