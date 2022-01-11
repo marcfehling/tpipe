@@ -82,10 +82,22 @@ namespace
     public:
       /**
        * Constructor. The manifold described is a pipe segment whose central
-       * axis points in direction
-       * @p direction and goes through the given @p point_on_axis.
+       * axis points in @p direction and goes through the given
+       * @p point_on_axis.
        *
+       * The vector @p normal_direction needs to be perpendicular to
+       * @p direction and acts as the reference for azimuth angles. In other
+       * words, $\phi = 0$ corresponds to @p normal_direction. For the pipe
+       * junction geometry, it needs to point in the same direction as the
+       * projection of the bifurcation edge on the opening plane, as this is
+       * the reference direction for azimuth angles by construction.
        *
+       * Both @p normal_direction and @p direction have to be unit vectors.
+       *
+       * We need @p data to map the pipe segment to a regular cylinder and back.
+       *
+       * The @p tolerance value is used to validate both direction vectors and
+       * to determine if a point in on the axis.
        */
       Manifold(const Tensor<1, spacedim> &normal_direction,
                const Tensor<1, spacedim> &direction,
@@ -101,19 +113,19 @@ namespace
 
       /**
        * Compute the cylindrical coordinates $(r, \phi, \lambda)$ for the given
-       * space point and map them to the unit cylinder, where $r$ denotes the
-       * distance from the axis, $\phi$ the angle between the given point and
-       * the computed normal direction, and $\lambda$ the axial position.
+       * space point and map them to a cylinder of height one, where $r$ denotes
+       * the distance from the axis, $\phi$ the angle between the given point
+       * and the normal direction, and $\lambda$ the axial position.
        */
       virtual Point<3>
       pull_back(const Point<spacedim> &space_point) const override;
 
       /**
        * Compute the Cartesian coordinates for a chart point given in
-       * cylindrical coordinates $(r, \phi, \lambda)$ on a unit cylinder, where
-       * $r$ denotes the distance from the axis, $\phi$ the angle between the
-       * given point and the computed normal direction, and $\lambda$ the axial
-       * position.
+       * cylindrical coordinates $(r, \phi, \lambda)$ on a cylinder of height
+       * one, where $r$ denotes the distance from the axis, $\phi$ the angle
+       * between the given point and the normal direction, and $\lambda$ the
+       * axial position.
        */
       virtual Point<spacedim>
       push_forward(const Point<3> &chart_point) const override;
@@ -216,6 +228,7 @@ namespace
                                                p_diff,
                                                /*axis=*/direction);
 
+      // Map the axial coordinate to a cylinder of height one.
       lambda /= compute_z_expansion(r * std::cos(phi), r * std::sin(phi), data);
 
       // Return distance from the axis, angle and signed distance on the axis.
@@ -231,11 +244,12 @@ namespace
       // Rotate the orthogonal direction by the given angle.
       const double sine_r   = chart_point(0) * std::sin(chart_point(1));
       const double cosine_r = chart_point(0) * std::cos(chart_point(1));
-      const double lambda =
-        chart_point(2) * compute_z_expansion(cosine_r, sine_r, data);
-
       const Tensor<1, spacedim> intermediate =
         normal_direction * cosine_r + dxn * sine_r;
+
+      // Map the axial coordinate back to the pipe segment.
+      const double lambda =
+        chart_point(2) * compute_z_expansion(cosine_r, sine_r, data);
 
       // Finally, put everything together.
       return point_on_axis + direction * lambda + intermediate;
