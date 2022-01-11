@@ -288,7 +288,8 @@ namespace
  * @note Only implemented for `dim = 3` and `spacedim = 3`.
  *
  * @param tria An empty triangulation which will hold the pipe junction geometry.
- * @param openings Center point and radius of each opening.
+ * @param openings Center point and radius of each of the three openings.
+ *                 The container has to be of size three.
  * @param bifurcation Center point of the bifurcation and hypothetical radius of
  *                    each truncated cone at the bifurcation.
  * @param aspect_ratio Aspect ratio of cells, specified as radial over z-extension.
@@ -644,7 +645,8 @@ pipe_junction(Triangulation<3, 3>                            &tria,
 
   // Since GridGenerator::merge_triangulations() does not copy boundary IDs
   // either, we need to set them after the final geometry is created. Luckily,
-  // boundary IDs match with manifold IDs, so we simply translate them.
+  // boundary IDs match with material IDs, so we simply translate them with the
+  // help of manifold IDs to identify openings.
   for (const auto &cell : tria.active_cell_iterators())
     for (const auto &face : cell->face_iterators())
       if (face->at_boundary())
