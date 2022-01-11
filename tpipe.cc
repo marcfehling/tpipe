@@ -232,7 +232,7 @@ namespace
       lambda /= compute_z_expansion(r * std::cos(phi), r * std::sin(phi), data);
 
       // Return distance from the axis, angle and signed distance on the axis.
-      return Point<3>(r, phi, lambda);
+      return {r, phi, lambda};
     }
 
 
