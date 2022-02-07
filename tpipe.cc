@@ -130,7 +130,7 @@ namespace
       virtual Point<spacedim>
       push_forward(const Point<3> &chart_point) const override;
 
-    protected:
+    private:
       /**
        * A vector orthogonal to the normal direction.
        */
@@ -146,7 +146,6 @@ namespace
        */
       const Point<spacedim> point_on_axis;
 
-    private:
       /**
        * Pipe segment properties to calculate its height.
        */
@@ -200,8 +199,7 @@ namespace
     std::unique_ptr<dealii::Manifold<dim, spacedim>>
     Manifold<dim, spacedim>::clone() const
     {
-      return std::make_unique<Manifold<dim, spacedim>>(
-        normal_direction, direction, point_on_axis, data, tolerance);
+      return std::make_unique<Manifold<dim, spacedim>>(*this);
     }
 
 
@@ -317,7 +315,7 @@ pipe_junction(Triangulation<3, 3>                            &tria,
 {
   constexpr unsigned int dim      = 3;
   constexpr unsigned int spacedim = 3;
-  using vector                    = Tensor<1, spacedim, double>;
+  using vector3d                  = Tensor<1, spacedim, double>;
 
   constexpr unsigned int n_pipes   = 3;
   constexpr double       tolerance = 1.e-12;
@@ -344,14 +342,14 @@ pipe_junction(Triangulation<3, 3>                            &tria,
   };
 
   // Cartesian base represented by unit vectors.
-  constexpr std::array<vector, spacedim> directions = {
-    {vector({1., 0., 0.}), vector({0., 1., 0.}), vector({0., 0., 1.})}};
+  constexpr std::array<vector3d, spacedim> directions = {
+    {vector3d({1., 0., 0.}), vector3d({0., 1., 0.}), vector3d({0., 0., 1.})}};
 
   // The skeleton corresponds to the axis of symmetry in the center of each
   // pipe segment. Each skeleton vector points from the associated opening to
   // the common bifurcation point. For convenience, we also compute length and
   // unit vector of every skeleton vector here.
-  std::array<vector, n_pipes> skeleton;
+  std::array<vector3d, n_pipes> skeleton;
   for (unsigned int p = 0; p < n_pipes; ++p)
     skeleton[p] = bifurcation.first - openings[p].first;
 
@@ -367,7 +365,7 @@ pipe_junction(Triangulation<3, 3>                            &tria,
     tolerance *
     *std::max_element(skeleton_length.begin(), skeleton_length.end());
 
-  std::array<vector, n_pipes> skeleton_unit;
+  std::array<vector3d, n_pipes> skeleton_unit;
   for (unsigned int p = 0; p < n_pipes; ++p)
     {
       Assert(skeleton_length[p] > tolerance_length,
@@ -383,8 +381,8 @@ pipe_junction(Triangulation<3, 3>                            &tria,
   // The normal vector of this particular plane then describes the edge at which
   // all pipe segments meet. If we would interpret the bifurcation as a ball
   // joint, the normal vector would correspond to the polar axis of the ball.
-  vector normal = cross_product_3d(skeleton_unit[1] - skeleton_unit[0],
-                                   skeleton_unit[2] - skeleton_unit[0]);
+  vector3d normal = cross_product_3d(skeleton_unit[1] - skeleton_unit[0],
+                                     skeleton_unit[2] - skeleton_unit[0]);
   Assert(normal.norm() > tolerance_length,
          ExcMessage("Invalid input: all three openings "
                     "are located on one line."));
@@ -392,7 +390,7 @@ pipe_junction(Triangulation<3, 3>                            &tria,
 
   // Projections of all skeleton vectors perpendicular to the normal vector, or
   // in other words, onto the plane described above.
-  std::array<vector, n_pipes> skeleton_plane;
+  std::array<vector3d, n_pipes> skeleton_plane;
   for (unsigned int p = 0; p < n_pipes; ++p)
     {
       skeleton_plane[p] = skeleton[p] - (skeleton[p] * normal) * normal;
@@ -475,7 +473,7 @@ pipe_junction(Triangulation<3, 3>                            &tria,
       // Step 2: transform unit cylinder to pipe segment
       //
       // For the given cylinder, we will interpret the base in the xy-plane as
-      // the cross section of the opening, and the base at z=1 as the surface
+      // the cross section of the opening, and the top at z=1 as the surface
       // where all pipe segments meet. On the latter surface, we assign the
       // section in positive y-direction to face the next (right/cyclic) pipe
       // segment, and allocate the domain in negative y-direction to border the
@@ -538,7 +536,8 @@ pipe_junction(Triangulation<3, 3>                            &tria,
         std::cos(.5 * azimuth_angle_left) / std::sin(.5 * azimuth_angle_left);
 
       // Now transform the cylinder as described above.
-      const auto pipe_segment = [&](const Point<spacedim> &pt) {
+      const auto pipe_segment_transform =
+        [&](const Point<spacedim> &pt) -> Point<spacedim> {
         // We transform the cylinder in x- and y-direction to become a truncated
         // cone, similarly to GridGenerator::truncated_cone().
         const double r_factor =
@@ -556,15 +555,9 @@ pipe_junction(Triangulation<3, 3>                            &tria,
                           "is not long enough in this configuration"));
         const double z_new = z_factor * pt[2];
 
-        // TODO: MSVC can't capture const or constexpr values in lambda
-        // functions (due to either a missing implementation or a bug).
-        // Instead, we duplicate the declaration here.
-        //   See also: https://developercommunity.visualstudio.com/t/
-        //             invalid-template-argument-expected-compile-time-co/187862
-        constexpr unsigned int spacedim = 3;
-        return Point<spacedim>(x_new, y_new, z_new);
+        return {x_new, y_new, z_new};
       };
-      GridTools::transform(pipe_segment, pipe);
+      GridTools::transform(pipe_segment_transform, pipe);
 
       //
       // Step 3: rotate pipe segment to match skeleton direction
@@ -576,8 +569,8 @@ pipe_junction(Triangulation<3, 3>                            &tria,
       // product of both vectors.
       const double rotation_angle =
         Physics::VectorRelations::angle(directions[2], skeleton_unit[p]);
-      const vector rotation_axis = [&]() {
-        const vector rotation_axis =
+      const vector3d rotation_axis = [&]() {
+        const vector3d rotation_axis =
           cross_product_3d(directions[2], skeleton_unit[p]);
         const double norm = rotation_axis.norm();
         if (norm < tolerance)
@@ -603,11 +596,11 @@ pipe_junction(Triangulation<3, 3>                            &tria,
       // With the latest rotation however, this is no longer the case. We rotate
       // the unit vector in x-direction in the same fashion, which gives us the
       // current direction of the projected edge.
-      const vector Rx = rotation_matrix * directions[0];
+      const vector3d Rx = rotation_matrix * directions[0];
 
       // To determine how far we need to rotate, we also need to project the
       // polar axis of the bifurcation ball joint into the same plane.
-      const vector normal_projected_on_opening =
+      const vector3d normal_projected_on_opening =
         normal - (normal * skeleton_unit[p]) * skeleton_unit[p];
 
       // Both the projected normal and Rx must be in the opening plane.
@@ -625,7 +618,8 @@ pipe_junction(Triangulation<3, 3>                            &tria,
       GridTools::rotate(skeleton_unit[p], lateral_angle, pipe);
 
       //
-      // Step 5: shift to final position
+      // Step 5: shift to final position and merge this pipe into the entire
+      // assembly
       //
       GridTools::shift(openings[p].first, pipe);
 
